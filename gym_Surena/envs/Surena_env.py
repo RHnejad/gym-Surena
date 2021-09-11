@@ -133,11 +133,9 @@ class SurenaRobot(gym.Env):
     #IMPORTANT: w2*done is not acurate, it should be fall instead but for now their are the same
     reward= w1*(observation[20]-x0) - w2*(done) -w3*(powers) -w4*(observation[22]-z0) -w5*(observation[21])
 
-    info="?"
-
 
     #...
-    return observation, reward, done, info
+    return observation, reward, done, {}
 
 
   def reset(self):
