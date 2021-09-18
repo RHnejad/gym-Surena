@@ -42,7 +42,7 @@ class SurenaRobot(gym.Env):
     self.num_actions=10
 
 
-    self.physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
+    self.physicsClient = p.connect(p.DIRECT)#or p.DIRECT for non-graphical version # p.connect(p.GUI)********
     p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
 
     g=-9.81
