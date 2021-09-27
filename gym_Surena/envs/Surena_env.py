@@ -127,9 +127,6 @@ class SurenaRobot(gym.Env):
         elif contacts[k][3]==5:
             FzL+=contacts[k][9]
 
-
-    #FIX FOR 12 DOF
-
     x=SPos[0]
 
     #without x 
@@ -153,15 +150,13 @@ class SurenaRobot(gym.Env):
     Ts=np.absolute(Ts)
     Theta_dots=np.absolute(Theta_dots)    
     powers=sum(Ts*Theta_dots)
-    
-        
+         
     return observation_new, iscontact, powers, x
 
 
   def step(self, action):
     
-    time.sleep(1./T) #default=1./240. ################################################################################################################
-
+    time.sleep(1./T) 
     if ACTIVATION:
         action=(np.devide((self.action_space.high-self.action_space.low),2))*action
     action=action+self.currentPos if DELTA_THETA else action
@@ -177,7 +172,7 @@ class SurenaRobot(gym.Env):
                                 controlMode=p.POSITION_CONTROL,
                                 targetPositions = action) #targetPositions =action[0].numpy())
 
-    p.stepSimulation() #NOT SURE WHERE TO PLACE IT
+    p.stepSimulation() 
 
     observation, iscontact, powers, x=self.Observations(1,0)   
 
@@ -186,13 +181,12 @@ class SurenaRobot(gym.Env):
     else:
       self.up=0
 
-    done=(observation[2*self.num_actions+1]<0.5) or (self.up>=5) #or .... ????
+    done=(observation[2*self.num_actions+2]<0.5) or (self.up>=5) #or .... ????
     if not done:
       self.step_counter+=1
      
-    #IMPORTANT: w2*done is not acurate, it should be fall instead but for now their are the same
     #reward= w0*(self.step_counter-50) + w1*(x-X0) - w2*(done) -w3*(powers) -w4*(observation[2*self.num_actions+1]-Z0) -w5*(observation[2*self.num_actions]) # x is not in observation
-    
+  
     #without x
     #reward= w0*(self.step_counter-50) + w1*(x-X0) - w2*(done) -w5*(observation[2*self.num_actions]) # x is not in observation
 
@@ -222,8 +216,6 @@ class SurenaRobot(gym.Env):
     # p.enableJointForceTorqueSensor(Sid,4)
     # p.enableJointForceTorqueSensor(Sid,10)
     p.setGravity(0,0,-9.81)
-
-    ###################################################################################################################################################
     p.setTimeStep(1./T)
     p.stepSimulation()
     
