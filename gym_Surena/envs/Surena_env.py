@@ -14,7 +14,7 @@ DELTA_THETA =0
 ACTIVATION=0
 
 file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-#file_name="SURENA/surenaFIXEDtoWorld.urdf"
+#file_name="SURENA/sfixed.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
 
 w0=10
