@@ -150,8 +150,10 @@ class SurenaRobot(gym.Env):
         Ts[jj]=JointStates[jj][3]
         Theta_dots[jj]=JointStates[jj][1]
         
+    Ts=np.absolute(Ts)
+    Theta_dots=np.absolute(Theta_dots)    
     powers=sum(Ts*Theta_dots)
-    powers=np.absolute(powers)
+    
         
     return observation_new, iscontact, powers, x
 
