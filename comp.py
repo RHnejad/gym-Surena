@@ -18,9 +18,6 @@ ACTIVATION=0
 file_name="SURENA/sfixed.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
 
-w0=35
-w1,w2=8,20 #w2=8
-w3,w4,w5=0.005,40,40 #w3=0.025
     
 X0=-0.517
 Z0=0.9727
@@ -44,10 +41,16 @@ class SurenaRobot(gym.Env):
       self.observation_space = gym.spaces.box.Box(
             low=np.array([-0.5,-1.0,0.0,-1.0,-0.7,  -0.1,-1.0,0.0,-1.0,-0.7,
             -315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,
-            -2,-10,-1.5,-3.0,-3.0,-3.0,-600,-600], dtype=np.float32),
+            -60,-40,-72,-27,-27,-60,-40,-72,-27,-27,
+            -10,-1.5,-3.0,-3.0,-3.0,
+            -1.0,-1.0,-1.0,-1.0, -5.0,-5.0,-5.0,
+            -600,-600], dtype=np.float32),
             high=np.array([0.1,1.2,2.0,1.3,0.7,   0.5,1.2,2.0 ,1.3,0.4,
             315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,
-            100,10,1.5,3.0,3.0,3.0,600,600], dtype=np.float32))
+            60,40,72,27,27, 60,40,72,27,27,
+            10,1.5,3.0,3.0,3.0,
+            1.0,1.0,1.0,1.0, 5.0,5.0,5.0,
+            600,600], dtype=np.float32))
              
       self.action_space = gym.spaces.box.Box(
             low=np.multiply(np.array([-0.0131,-0.0199,-0.0314,-0.0262,-0.0262   ,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ], dtype=np.float32),200./T),
@@ -64,10 +67,16 @@ class SurenaRobot(gym.Env):
       self.observation_space = gym.spaces.box.Box(
             low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7,
             -315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,-315.0,
-            -2,-10,-1.5,-3.0,-3.0,-3.0,-600,-600], dtype=np.float32),
+            -60,-60,-40,-72,-27,-27,-60,-60,-40,-72,-27,-27,
+            -10,-1.5,-3.0,-3.0,-3.0,
+            -1.0,-1.0,-1.0,-1.0, -5.0,-5.0,-5.0,
+            -600,-600], dtype=np.float32),
             high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
             315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,315.0,
-            100,10,1.5,3.0,3.0,3.0,600,600], dtype=np.float32))
+            60,60,40,72,27,27, 60,60,40,72,27,27,
+            10,1.5,3.0,3.0,3.0,
+            1.0,1.0,1.0,1.0, 5.0,5.0,5.0,
+            600,600], dtype=np.float32))
              
       self.action_space = gym.spaces.box.Box(
             low=np.multiply(np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T),
@@ -76,12 +85,12 @@ class SurenaRobot(gym.Env):
             low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7], dtype=np.float32),
             high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4 ], dtype=np.float32))
         
-
-    self.observation_dimensions= 28 if TENDOF else 32 
+    self.num_actions= (10 if TENDOF else 12)
+    self.observation_dimensions= 3*self.num_actions+14 #28 if TENDOF else 32 
     self.rightLegID=[1,2,3,4,5]  if TENDOF else[0,1,2,3,4,5] 
     self.leftLegID=[7,8,9,10,11]  if TENDOF else[6,7,8,9,10,11]
     self.jointIDs=[1,2,3,4,5,7,8,9,10,11]  if TENDOF else[0,1,2,3,4,5,6,7,8,9,10,11] 
-    self.num_actions= (10 if TENDOF else 12) 
+     
 
     self.physicsClient = p.connect(p.GUI) #p.DIRECT for non-graphical version /// p.GUI
     p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
@@ -96,7 +105,7 @@ class SurenaRobot(gym.Env):
 
   def Observations(self,SurenaID,planeId): 
 
-    Ts=np.zeros(self.num_actions)
+    Ts_raw=np.zeros(self.num_actions)
     Theta_dots=np.zeros(self.num_actions)
     Powers=np.zeros(self.num_actions)
 
@@ -114,11 +123,7 @@ class SurenaRobot(gym.Env):
     elif z_l5<=foot_z0 or z_l11<=foot_z0:
         iscontact=True
 
-    observation_new=np.zeros(self.observation_dimensions)
-    for ii in range(self.num_actions):
-        observation_new[ii]=JointStates[ii][0] #theta
-        observation_new[ii+self.num_actions]=JointStates[ii][1] #theta_dot
-        
+
     FzR,FzL=0.0,0.0
     ncontact=len(contacts)
     for k in range(ncontact):
@@ -128,39 +133,52 @@ class SurenaRobot(gym.Env):
             FzL+=contacts[k][9]
 
 
-    #FIX FOR 12 DOF
-
-    x=SPos[0]
-
-    #without x 
-    # self.currentPos=observation_new[0:self.num_actions]    
-    # observation_new[2*self.num_actions:2*self.num_actions+2]=np.array(SPos)[1:3]
-    # observation_new[2*self.num_actions+2:2*self.num_actions+5]=np.array(LinearVel)
-    # observation_new[2*self.num_actions+5:2*self.num_actions+7]=np.array([FzR, FzL]) #F_z_r and F_z_l
-    # #observation_new[26:28]=np.array([JointStates[3][2][2] , JointStates[8][2][2]]) #F_z_r and F_z_l
-
-    #with x
-    self.currentPos=observation_new[0:self.num_actions]    
-    observation_new[2*self.num_actions:2*self.num_actions+3]=np.array(SPos)
-    observation_new[2*self.num_actions+3:2*self.num_actions+6]=np.array(LinearVel)
-    observation_new[2*self.num_actions+6:2*self.num_actions+8]=np.array([FzR, FzL]) #F_z_r and F_z_l
-
-
     for jj in range(self.num_actions):
-        Ts[jj]=JointStates[jj][3]
+        Ts_raw[jj]=JointStates[jj][3]
         Theta_dots[jj]=JointStates[jj][1]
         
-    Ts=np.absolute(Ts)
+    Ts=np.absolute(Ts_raw)
     Theta_dots=np.absolute(Theta_dots)
     powers=sum(Ts*Theta_dots)
+
+    
+    x=SPos[0]
+
+    observation_new=np.zeros(self.observation_dimensions)
+
+    for ii in range(self.num_actions):
+        observation_new[ii]=JointStates[ii][0] #theta
+        observation_new[ii+self.num_actions]=JointStates[ii][1] #theta_dot
+        
+        
+    
+    #without x 
+    self.currentPos=observation_new[0:self.num_actions] 
+
+    observation_new[2*self.num_actions: 3*self.num_actions]=Ts_raw
+    observation_new[3*self.num_actions: 3*self.num_actions+2]=np.array(SPos)[1:3]
+    observation_new[3*self.num_actions+2: 3*self.num_actions+5]=np.array(LinearVel)
+
+    observation_new[3*self.num_actions+5: 3*self.num_actions+9]=np.array(SOrn)
+    observation_new[3*self.num_actions+9: 3*self.num_actions+12]=np.array(AngularVel)
+
+    observation_new[3*self.num_actions+12: 3*self.num_actions+14]=np.array([FzR, FzL]) #F_z_r and F_z_l
+
+
+    #observation_new[26:28]=np.array([JointStates[3][2][2] , JointStates[8][2][2]]) #F_z_r and F_z_l
+
+    #with x
+    # self.currentPos=observation_new[0:self.num_actions]    
+    # observation_new[2*self.num_actions:2*self.num_actions+3]=np.array(SPos)
+    # observation_new[2*self.num_actions+3:2*self.num_actions+6]=np.array(LinearVel)
+    # observation_new[2*self.num_actions+6:2*self.num_actions+8]=np.array([FzR, FzL]) #F_z_r and F_z_l
   
     return observation_new, iscontact, powers, x, sum(Ts)
 
 
   def step(self, action):
 
-
-    time.sleep(1./T) #################################################################################
+    time.sleep(1./T)
 
     if ACTIVATION:
         action=(np.divide((self.action_space.high-self.action_space.low),2))*action
@@ -188,27 +206,31 @@ class SurenaRobot(gym.Env):
     else:
       self.up=0
 
-    done=(observation[2*self.num_actions+2]<0.5) or (self.up>=30) #or .... ????
+    done=(observation[3*self.num_actions+1]<0.4) or (self.up>=20) #or .... ????
     
     if not done:
       self.step_counter+=1
      
     #IMPORTANT: w2*done is not acurate, it should be fall instead but for now their are the same
     
-    #[0.x,1.x_dot,2.stepCount,3.done,4.power,5.dy,6.dz]
-    param=np.array([(x-X0), observation[2*self.num_actions+3],((self.step_counter-10)/num_steps), done, powers, observation[2*self.num_actions+1], np.abs(observation[2*self.num_actions+2]-Z0)])
-    weights=np.array([+ 0 ,+10 , +0 ,  -0 , -1 ,-0 ,-0])
-    reward=sum(param*weights)
-    #print("*:",parameters)
+    #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz]
+    param=np.array([(x-X0),
+     observation[3*self.num_actions+2],
+     ((self.step_counter-T*2)/num_steps),
+      done, 
+      powers, 
+      (np.abs(observation[3*self.num_actions])**2), 
+      (np.abs(observation[3*self.num_actions+1]-Z0))**2])
 
-    # reward= w0*((self.step_counter-50)/num_steps) + w1*(x-X0) - w2*(done) #-w3*(powers) -w4*(observation[2*self.num_actions+2]-Z0) -w5*(observation[2*self.num_actions+1])#-S_T*0.02  
-    # #reward= w0*(self.step_counter-50) + w1*(observation[2*self.num_actions+3]) - w2*(done) -w3*(powers) -w4*(observation[2*self.num_actions+2]-Z0) -w5*(observation[2*self.num_actions+1]) -S_T*0.02 # x is not in observation
-    # #print("reward:",reward,[self.step_counter,w0*((self.step_counter-50)/num_steps),x, w1*(x-X0)])
-    # #without x
-    # #reward= w0*(self.step_counter-50) + w1*(x-X0) - w2*(done) -w5*(observation[2*self.num_actions]) # x is not in observation
-
-    # #with x
-    # #reward= w0*(self.step_counter-50) + w1*(x-X0) - w2*(done) -w5*(observation[2*self.num_actions+1]) 
+    #weights=np.array([+ 0.1 ,+5.0 , +500.0 ,  -6.0 , -1.0 ,-1.0 ,-1.0])
+    weights=np.array([+ 0.0 , +10.0 , 0.0 ,  -0.0 , -0.002 ,-3.0 ,-1.0])
+    
+    #here
+    #print(param*weights)
+    reward_s=(sum(param*weights)+0.625*(float(not done)))-self.up
+    
+    if done:
+        print(self.step_counter)
 
     if save_actions:
         if self.first_step:
@@ -217,8 +239,15 @@ class SurenaRobot(gym.Env):
 
     self.first_step=False
 
-    return observation, reward, done, {}
+    return observation, reward_s, done, {}
 
+  def knee(self):
+    tha=[-0.,-0.28140172, -0.93511444,  0., 0.93511444,  0.28140172,
+    -0., -0.55515457, -0.87560747,  0., 0.87560747,  0.55515457]
+    p.setJointMotorControlArray(bodyUniqueId=1,
+                                jointIndices=[0,1,2,3,4,5,6,7,8,9,10,11] ,
+                                controlMode=p.POSITION_CONTROL,
+                                targetPositions = tha) 
 
 
   def reset(self):
@@ -228,19 +257,21 @@ class SurenaRobot(gym.Env):
     startPos = [0,0,0]
     startOrientation = p.getQuaternionFromEuler([0,0,0])
     p.resetSimulation()
-    obs=np.zeros(self.observation_dimensions)
-    obs[2*self.num_actions:2*self.num_actions+2]=[0.0,Z0] #ignored x if not: :2*self.num_actions+2 and [X0,0.0,Z0]
-    obs[self.observation_dimensions-2:self.observation_dimensions]=[-200,-200] #???????????
+    # obs=np.zeros(self.observation_dimensions)
+    # obs[2*self.num_actions:2*self.num_actions+2]=[0.0,Z0] #ignored x if not: :2*self.num_actions+2 and [X0,0.0,Z0]
+    # obs[self.observation_dimensions-2:self.observation_dimensions]=[-200,-200] #???????????
     planeId = p.loadURDF("plane.urdf") #ID:0
     Sid=p.loadURDF(file_name,startPos, startOrientation) #ID:1
     # p.enableJointForceTorqueSensor(Sid,4)
     # p.enableJointForceTorqueSensor(Sid,10)
     p.setGravity(0,0,-9.81)
-    
-#####################################################################################################
+
+    #self.knee()
     p.setTimeStep(1./T)
     p.stepSimulation()
-    
+    obs=self.Observations(Sid,planeId)[0]
+    #print("OBS:",obs)
+    #time.sleep(1.)
     return obs
 
 
@@ -328,8 +359,10 @@ class NormalizedEnv(gym.core.Wrapper):
         self.ret = self.ret * self.gamma + rews
         obs = self._obfilt(obs)
         if self.ret_rms:
+            #print("before:",rews)
             self.ret_rms.update(np.array([self.ret].copy()))
             rews = np.clip(rews / np.sqrt(self.ret_rms.var + self.epsilon), -self.cliprew, self.cliprew)
+            #print("after",rews)
         self.ret = self.ret * (1-float(dones))
         return obs, rews, dones, infos
 
@@ -352,7 +385,7 @@ class NormalizedEnv(gym.core.Wrapper):
 #     # Common arguments
 exp_name="test1clearrl.py"
 gym_id="gym_Surena:SurenaRobot" #HopperBulletEnv-v0"
-learning_rate=3e-4
+learning_rate=1e-3 #3e-4
 seed=1
 total_timesteps= 1000000#2000000
 torch_deterministic=True
@@ -362,8 +395,10 @@ capture_video=0#True
 wandb_project_name="cleanRL"
 wandb_entity=None
 
+#HERE
+
 # Algorithm specific arguments
-n_minibatch=32 #32
+n_minibatch=32
 num_envs=1
 num_steps=1024#2048
 gamma=0.99
