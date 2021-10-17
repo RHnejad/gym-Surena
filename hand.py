@@ -4,6 +4,7 @@ N=800
 urfdName="SURENA/surenaNOTWorld.urdf"  #surenaFIXEDtoWorld.urdf
 txtName="qscenario.txt"
 RightArm=True
+Plot=True
 #__________________________________________________
 
 
@@ -92,7 +93,7 @@ p.disconnect()
 
 
 
-import matplotlib.pyplot as plt
+
 
 def plot_actions(): 
     plt.figure()
@@ -112,8 +113,9 @@ def plot_feedbacks():
     plt.legend([1,2,3,4,5,6,7])
     plt.title("FeedBack Theta_Dot")
 
-    
-plot_actions()
-plot_feedbacks()
-plt.show()
+if Plot:
+    import matplotlib.pyplot as plt
+    plot_actions()
+    plot_feedbacks()
+    plt.show()
 
