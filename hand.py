@@ -14,7 +14,7 @@ import time
 import pybullet_data
 
 #Reading inputs from the file
-with open("qscenario.txt") as f:
+with open(txtName) as f:
     lines = f.readlines()
     
 f.close()
