@@ -7,7 +7,6 @@ RightArm=True
 Plot=True
 #__________________________________________________
 
-
 from os import MFD_HUGE_64KB
 import numpy as np
 import pybullet as p
@@ -88,19 +87,13 @@ while flag:
             flag=False
         
 
-
 p.disconnect()
-
-
-
-
 
 def plot_actions(): 
     plt.figure()
     plt.plot(actions)
     plt.legend([1,2,3,4,5,6,7])
-    plt.title("Actions")
-    
+    plt.title("Actions")  
 
 def plot_feedbacks():
     plt.figure()
