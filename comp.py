@@ -14,7 +14,7 @@ DELTA_THETA =1
 ACTIVATION=0
 KNEE=1
 NORMALIZE=1
-WITH_GUI =True
+WITH_GUI =1
 
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
@@ -167,9 +167,6 @@ class SurenaRobot(gym.Env):
 
         observation_new[3*self.num_actions+12: 3*self.num_actions+14]=np.array([FzR, FzL]) #F_z_r and F_z_l
 
-        if NORMALIZE:
-            temp=self.obs_high-self.obs_low
-            observation_new=observation_new/temp
 
         return observation_new, iscontact, powers, x
 
@@ -197,6 +194,7 @@ class SurenaRobot(gym.Env):
         p.stepSimulation() 
 
         observation, iscontact, powers, x=self.Observations() 
+        
 
         if not iscontact:
             self.up+=1
@@ -233,6 +231,10 @@ class SurenaRobot(gym.Env):
 
         self.first_step=False
 
+        if NORMALIZE:
+            temp=self.obs_high-self.obs_low
+            observation=observation/temp
+            
         return observation, reward_s, done, {}
 
     #________________________________________
@@ -286,6 +288,9 @@ class SurenaRobot(gym.Env):
         
         p.stepSimulation()
         obs=self.Observations()[0]
+        if NORMALIZE:
+            temp=self.obs_high-self.obs_low
+            obs=obs/temp
         
         return obs
 
