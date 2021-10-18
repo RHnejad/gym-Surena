@@ -29,8 +29,8 @@ foot_z0=0.03799
 T=50.
 
 if KNEE:
-    from kasra.Robot import *
-    from kasra.DCM import *
+    from SURENA.kasra.Robot import *
+    from SURENA.kasra.DCM import *
     surena = Robot(shank = 0.36, hip = 0.37, pelvis_lengt = 0.115)
     planner = DCMPlanner(0.7, 1.5, 0.45,1./200.) 
 
