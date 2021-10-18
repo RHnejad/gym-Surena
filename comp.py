@@ -15,6 +15,7 @@ ACTIVATION=0
 KNEE=1
 NORMALIZE=1
 WITH_GUI =1
+SAVE_MODEL=1
 
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
@@ -574,6 +575,8 @@ next_obs = envs.reset()
 next_done = torch.zeros(num_envs).to(device)
 num_updates = total_timesteps // batch_size
 for update in range(1, num_updates+1):
+
+    print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&",update)
     # Annealing the rate if instructed to do so.
     if anneal_lr:
         frac = 1.0 - (update - 1.0) / num_updates
@@ -705,6 +708,13 @@ for update in range(1, num_updates+1):
     #   print(ACTION)
     #   break
 
+    if SAVE_MODEL:
+        if update%100 == 1 or update==num_updates:
+            print("*")
+            print(agent.actor_mean)
+            torch.save(agent.actor_mean,"./modelTest")
+            print("saved model", update)
+        
 
 with open('actions.txt', 'w') as filehandle:
     for listitem in ACTION:
