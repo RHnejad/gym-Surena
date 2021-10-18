@@ -3,7 +3,7 @@
 N=800
 urfdName="SURENA/surenaNOTWorld.urdf"  #surenaFIXEDtoWorld.urdf
 txtName="qscenario.txt"
-RightArm=True
+RightArm=False
 Plot=True
 #__________________________________________________
 
@@ -51,6 +51,8 @@ feedback_theta=np.zeros([N,7])
 feedback_thetaDot=np.zeros([N,7])
 actions=np.zeros([N,7])
 
+Vrate=1
+
 #_____________
 i=0
 j=0
@@ -58,7 +60,7 @@ flag=True
 Sid,planeId=Reset()
 while flag:
 
-    time.sleep(1./200.)
+    time.sleep((1./200.)/Vrate)
 
     p.setJointMotorControlArray(bodyUniqueId=Sid,
                                 jointIndices=joints,
@@ -77,14 +79,18 @@ while flag:
     j+=7
     i+=1
     if i==N:    
-        print("_____ Press Y if you want to replay _____")
+        print("_____ Press Y if you want to replay, N if you want to continue, a number if you want to change the rate _____")
         inp=input()
-        if (inp=="Y" or inp=="y"):
+        try:
+            Vrate = float(inp)
             Reset()
-            i=0
-            j=0
-        else:
-            flag=False
+            i,j=0,0 
+        except ValueError:
+            if (inp=="Y" or inp=="y"):
+                Reset()
+                i,j,Vrate=0,0,1    
+            else:
+                flag=False
         
 
 p.disconnect()
