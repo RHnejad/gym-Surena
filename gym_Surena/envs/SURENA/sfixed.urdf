@@ -596,7 +596,7 @@
     <parent link="LARM_LINK3"/>
     <child link="LARM_LINK4"/>
     <axis xyz="0 1 0"/>
-    <limit effort="300.0" lower="-1000.0" upper="-1000.0" velocity="0.5"/>
+  
   </joint>
   <joint name="LArm_WristY_J5" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -619,61 +619,4 @@
     <axis xyz="0 1 0"/>
 
   </joint>
-
-	<!--Adding Extra link and joints for sole FT sensors>
-  <link name="r_sole">
-    <visual>
-      <origin rpy="0 0 0" xyz="0.05 0 0.01"/>
-      <geometry>
-        <box size="0.3 0.15 0.001"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0.05 0 0"/>
-      <geometry>
-        <box size="0.3 0.15 0.001"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.05 0 0.0"/>
-      <mass value="0.001"/>
-      <inertia ixx="0.001702" ixy="-0.000013" ixz="-0.000187" iyy="0.003158" iyz="0.000031" izz="0.003625"/>
-    </inertial>
-  </link>
-
-  <joint name="r_ft" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 -0.11"/>
-    <parent link="RLeg_Foot_Link"/>
-    <child link="r_sole"/>
-
-  </joint>
-
-  <link name="l_sole">
-    <visual>
-      <origin rpy="0 0 0" xyz="0.05 0 0.01"/>
-      <geometry>
-        <box size="0.3 0.15 0.001"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0.05 0 0"/>
-      <geometry>
-        <box size="0.3 0.15 0.001"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.05 0 0.0"/>
-      <mass value="0.001"/>
-      <inertia ixx="0.001702" ixy="-0.000013" ixz="-0.000187" iyy="0.003158" iyz="0.000031" izz="0.003625"/>
-    </inertial>
-  </link>
-
-  <joint name="l_ft" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 -0.11"/>
-    <parent link="LLeg_Foot_Link"/>
-    <child link="l_sole"/>
-
-  </joint-->
-
-
 </robot>
