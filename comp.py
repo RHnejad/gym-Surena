@@ -15,14 +15,19 @@ DELTA_THETA =0
 ACTIVATION=0
 KNEE=0
 NORMALIZE=1
-WITH_GUI =1
+WITH_GUI =0
 ACTIVATE_SLEEP,A_S_AFTER = False,None
-SAVE_MODEL=0
+
+SAVE_MODEL=1
+LOAD_FROM_PREVIOUS_MODELS=1
 
 if not WITH_GUI:
     ACTIVATE_SLEEP=False
 if MINDOF:
     TENDOF=0
+
+model_actor_mean_name="./modelTest"
+model_critic_name="./modelcriticTest"
 
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
@@ -536,6 +541,8 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class Agent(nn.Module):
     def __init__(self, envs):
         super(Agent, self).__init__() #new both networks used to be 1 hiddenlayer (3layers )with 64 nuerons
+        
+        
         self.critic = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 256)),
             nn.Tanh(),
@@ -544,7 +551,8 @@ class Agent(nn.Module):
             layer_init(nn.Linear(128, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.),
-        )
+        ) if not LOAD_FROM_PREVIOUS_MODELS else torch.load(model_critic_name) #new
+
         self.actor_mean = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 256)),
             nn.Tanh(),
@@ -555,8 +563,10 @@ class Agent(nn.Module):
             layer_init(nn.Linear(256, 128)),
             nn.Tanh(),
             layer_init(nn.Linear(128, np.prod(envs.action_space.shape)), std=0.01),
-            #nn.Tanh()         
-        ) #new
+            #nn.Tanh()         #new
+        ) if not LOAD_FROM_PREVIOUS_MODELS else torch.load(model_actor_mean_name) #new
+
+
         self.actor_logstd = nn.Parameter(torch.full((1, np.prod(envs.action_space.shape)),-1.0)) #new torch.zeros(1, np.prod(envs.action_space.shape))
         
 
@@ -732,6 +742,7 @@ for update in range(1, num_updates+1):
             print("*")
             print(agent.actor_mean)
             torch.save(agent.actor_mean,"./modelTest")
+            torch.save(agent.critic,"./modelcriticTest")
             print("saved model", update)
 
     if update==A_S_AFTER:
