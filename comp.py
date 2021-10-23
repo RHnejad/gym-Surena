@@ -10,16 +10,23 @@ REWS=np.array([])
 save_actions=0
 
 TENDOF=0
-DELTA_THETA =1
+MINDOF=1
+DELTA_THETA =0
 ACTIVATION=0
-KNEE=1
+KNEE=0
 NORMALIZE=1
 WITH_GUI =1
-SAVE_MODEL=1
+ACTIVATE_SLEEP,A_S_AFTER = False,None
+SAVE_MODEL=0
+
+if not WITH_GUI:
+    ACTIVATE_SLEEP=False
+if MINDOF:
+    TENDOF=0
 
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-file_name="SURENA/sfixed.urdf"
+file_name="SURENA/sfixed.urdf" if not MINDOF else "SURENA/sfixedMIN.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
 
     
@@ -32,7 +39,7 @@ if KNEE:
     from kasra.Robot import *
     from kasra.DCM import *
     surena = Robot(shank = 0.36, hip = 0.37, pelvis_lengt = 0.115)
-    planner = DCMPlanner(0.7, 1.5, 0.45,1./200.) 
+    planner = DCMPlanner(0.7, 1.5, 0.45,1./T) 
 
 
 class SurenaRobot(gym.Env):
@@ -65,10 +72,18 @@ class SurenaRobot(gym.Env):
 
         
         if TENDOF:
-            obs_high,obs_low=np.delete(self.obs_high,[0,6,12,18,24,30]),np.delete(self.obs_low,[0,6,12,18,24,30])
-            theta_high,theta_low=np.delete(self.theta_high,[0,6]),np.delete(self.theta_low,[0,6])
-            thetaDot_high,thetaDot_low=np.delete(self.thetaDot_high,[0,6]),np.delete(self.thetaDot_low,[0,6])
+            self.obs_high,self.obs_low=np.delete(self.obs_high,[0,6,12,18,24,30]),np.delete(self.obs_low,[0,6,12,18,24,30])
+            self.theta_high,self.theta_low=np.delete(self.theta_high,[0,6]),np.delete(self.theta_low,[0,6])
+            self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,[0,6]),np.delete(self.thetaDot_low,[0,6])
             VelList=np.delete(VelList,[0,6])
+
+        if MINDOF:
+            temp=[0,1,4,5,6,7,10,11, 12,13,16,17,18,19,22,23, 24,25,28,29,30,31,34,35]
+            self.obs_high,self.obs_low=np.delete(self.obs_high,temp),np.delete(self.obs_low,temp)
+            self.theta_high,self.theta_low=np.delete(self.theta_high,[0,1,4,5,6,7,10,11]),np.delete(self.theta_low,[0,1,4,5,6,7,10,11])
+            self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,[0,1,4,5,6,7,10,11]),np.delete(self.thetaDot_low,[0,1,4,5,6,7,10,11])
+            VelList=np.delete(VelList,[0,1,4,5,6,7,10,11])
+
 
         #________________________________________
         
@@ -76,11 +91,11 @@ class SurenaRobot(gym.Env):
                 low=self.obs_low,
                 high=self.obs_high)
 
-        self.action_space=gym.spaces.box.Box(
+        self.action_space=(gym.spaces.box.Box(
                 low=self.thetaDot_low,
-                high=self.thetaDot_high) if DELTA_THETA else gym.spaces.box.Box(
+                high=self.thetaDot_high)) if DELTA_THETA else (gym.spaces.box.Box(
                 low=self.theta_low,
-                high=self.theta_high)
+                high=self.theta_high))
 
         self.joint_space = {
                 "low":self.theta_low,
@@ -90,13 +105,13 @@ class SurenaRobot(gym.Env):
         self.maxVel=np.multiply(np.array(VelList, dtype=np.float32),2*(np.pi)/60)
         self.minVel=np.multiply(self.maxVel,-1)
 
-        self.num_actions= (10 if TENDOF else 12)
-        self.observation_dimensions= 3*self.num_actions+14 #28 if TENDOF else 32
+        self.num_actions= (10 if TENDOF else 12) if not MINDOF else 4
+        self.observation_dimensions= 3*self.num_actions+14 
 
         self.currentPos=np.zeros((self.num_actions,))
             
-        self.rightLegID=[1,2,3,4,5]  if TENDOF else list(range(6))
-        self.leftLegID=[7,8,9,10,11]  if TENDOF else list(range(6,12))
+        self.rightLegID=([1,2,3,4,5]  if TENDOF else list(range(6))) if not MINDOF else [2,3]
+        self.leftLegID=([7,8,9,10,11]  if TENDOF else list(range(6,12)) ) if not MINDOF else [8,9]
         self.jointIDs=self.rightLegID+self.leftLegID
             
         self.physicsClient = p.connect(p.GUI) if WITH_GUI else p.connect(p.DIRECT)
@@ -175,7 +190,8 @@ class SurenaRobot(gym.Env):
 
     def step(self, action):
 
-        time.sleep(1./T)
+        if ACTIVATE_SLEEP:
+            time.sleep(1./T)
 
         if ACTIVATION:
             action=(np.divide((self.action_space.high-self.action_space.low),2))*action
@@ -264,7 +280,10 @@ class SurenaRobot(gym.Env):
                                             controlMode=p.POSITION_CONTROL,
                                             targetPosition = leftConfig[index])
                 p.stepSimulation()
-        time.sleep(0.25)
+        if ACTIVATE_SLEEP:
+            time.sleep(1)
+
+        
 
     #________________________________________
 
@@ -714,6 +733,9 @@ for update in range(1, num_updates+1):
             print(agent.actor_mean)
             torch.save(agent.actor_mean,"./modelTest")
             print("saved model", update)
+
+    if update==A_S_AFTER:
+        ACTIVATE_SLEEP=True
         
 
 with open('actions.txt', 'w') as filehandle:
