@@ -1,5 +1,6 @@
 import gym
 from gym import spaces
+from matplotlib.pyplot import flag
 import pybullet as p
 import numpy as np
 import time
@@ -9,38 +10,47 @@ ACTION=[]
 REWS=np.array([])
 save_actions=0
 
-TENDOF=0
-MINDOF=1
+WITH_GUI =1
+
+SAVE_MODEL=0
+LOAD_FROM_PREVIOUS_MODELS=0
+
+TENDOF=1
+MINDOF=0
+
 DELTA_THETA =0
+TORQUE_CONTROL=1
+
 ACTIVATION=0
 KNEE=0
+FOOT_PLACEMENT=0
+
 NORMALIZE=1
-WITH_GUI =0
+
 ACTIVATE_SLEEP,A_S_AFTER = False,None
 
-SAVE_MODEL=1
-LOAD_FROM_PREVIOUS_MODELS=1
 
 if not WITH_GUI:
     ACTIVATE_SLEEP=False
 if MINDOF:
     TENDOF=0
 
-model_actor_mean_name="./CHECKPOINTS/modelactorTest1.tar"
-model_critic_name="./CHECKPOINTS/modelcriticTest1.tar"
+model_actor_mean_name="./CHECKPOINTS/modelactorTestctlC.tar"
+model_critic_name="./CHECKPOINTS/modelcriticTestctlC.tar"
 
 #"SURENA/sfixedWLess.urdf"
 #"SURENA/sfixedWless6dof.urdf"
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-file_name="SURENA/sfixedWLess.urdf" if not MINDOF else "SURENA/sfixedWless6dof.urdf"
+file_name="SURENA/sfixedWLessLim.urdf" if not MINDOF else "SURENA/sfixedWless6dof.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
 
-    
+deltaS=0.5    
 X0=-0.517
 Z0=0.9727
-foot_z0=0.03799
-T=50.
+foot_z0=0.037999 
+foor_y0_r=0.11380
+T=200.
 
 if KNEE:
     from kasra.Robot import *
@@ -61,9 +71,13 @@ class SurenaRobot(gym.Env):
         self.theta_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4 ], dtype=np.float32)
         self.theta_low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7], dtype=np.float32)
 
-        self.thetaDot_high=high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
+        self.thetaDot_high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
         self.thetaDot_low=np.multiply (np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T)            
         
+        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+20,27+20 ], dtype=np.float32),3.0)
+        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-20,-27-20], dtype=np.float32),3.0)
+        #multiplied to match humanoid_running order and +20 for ankle torques to match better robot versions
+
         self.obs_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
                 315,315,315,315,315,315, 315,315,315,315,315,315,
                 #60,60,40,72,27,27, 60,60,40,72,27,27,
@@ -82,12 +96,14 @@ class SurenaRobot(gym.Env):
             self.obs_high,self.obs_low=np.delete(self.obs_high,[0,6,12,18]),np.delete(self.obs_low,[0,6,12,18])
             self.theta_high,self.theta_low=np.delete(self.theta_high,[0,6]),np.delete(self.theta_low,[0,6])
             self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,[0,6]),np.delete(self.thetaDot_low,[0,6])
+            self.torques_high,self.torques_low=np.delete(self.torques_high,[0,6]),np.delete(self.torques_low,[0,6])
             VelList=np.delete(VelList,[0,6])
-
+            
         if MINDOF:
             temp=[0,4,5,6,10,11]
             self.theta_high,self.theta_low=np.delete(self.theta_high,temp),np.delete(self.theta_low,temp)
             self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,temp),np.delete(self.thetaDot_low,temp)
+            self.torques_high,self.torques_low=np.delete(self.torques_high,temp),np.delete(self.torques_low,temp)
             VelList=np.delete(VelList,temp)
             temp=temp+[12,16,17,18,22,23]
             self.obs_high,self.obs_low=np.delete(self.obs_high,temp),np.delete(self.obs_low,temp)
@@ -98,11 +114,16 @@ class SurenaRobot(gym.Env):
                 low=self.obs_low,
                 high=self.obs_high)
 
-        self.action_space=(gym.spaces.box.Box(
-                low=self.thetaDot_low,
-                high=self.thetaDot_high)) if DELTA_THETA else (gym.spaces.box.Box(
-                low=self.theta_low,
-                high=self.theta_high))
+        if TORQUE_CONTROL:
+            self.action_space=(gym.spaces.box.Box(
+                    low=self.torques_low,
+                    high=self.torques_high)) 
+        else:
+            self.action_space=(gym.spaces.box.Box(
+                    low=self.thetaDot_low,
+                    high=self.thetaDot_high)) if DELTA_THETA else (gym.spaces.box.Box(
+                    low=self.theta_low,
+                    high=self.theta_high))
 
         self.joint_space = {
                 "low":self.theta_low,
@@ -133,7 +154,34 @@ class SurenaRobot(gym.Env):
         self.startPos = [0,0,0]
         self.startOrientation = p.getQuaternionFromEuler([0,0,0])
 
+        self.paces=[0.25,0.25] #0:right 1:left
+        self.current_feet_pos=[]
+        self.last_feet_floor_x=[]
+        self.pace_cout=[]
+
         self.reset()
+
+#_______________________________________
+    def create_step_plcament(self):
+        pass
+    #     if right_foot_first :
+    #         if self.foot_place_count_right==0:
+    #             next_foor_place_right=0.5*self.dS_right*self.foot_place_count_right+1
+    #     elif self.foot_place_count_left==0:
+    #             next_foor_place_left=0.5*self.dS_left*self.foot_place_count_left+1
+    #     else:        
+    #         next_foor_place_right=self.dS_right*self.foot_place_count_right+1
+    #         next_foor_place_left=self.dS_left*self.foot_place_count_left+1
+
+    # def cal_pace_penalty(self,foot):
+    #     deltaX=self.current_feet_pos[foot][0]-self.last_feet_floor_x[foot]
+    #     if deltaX<0:
+    #         return 0 #CHECK, CHANGE I DON'T KNOW !!!!
+    #     if ?
+    #     theta_limit=np.arcsin(np.sqrt((self.paces[foot]-deltaX)/self.paces[foot]))
+    #     theta_current=np.arctan()
+
+    #     pass
 
 #____________________________________________________________________________________________
     #from_CAST
@@ -194,7 +242,6 @@ class SurenaRobot(gym.Env):
             return(np.block([[self.rotateAxisY(q), p.reshape((3,1))], [np.zeros((1, 3)), 1]]))
         elif axis == 2:
             return(np.block([[self.rotateAxisZ(q), p.reshape((3,1))], [np.zeros((1, 3)), 1]]))
-
 
     def ankle2pelvis(self, p_a, is_right):
         # p_a position relative to ankle coordinate
@@ -277,9 +324,14 @@ class SurenaRobot(gym.Env):
                     V.append([contact[0]+0.1746, contact[1]-0.0789, contact[0]+0.1746 + contact[1]-0.0789])
 
         zmp_violate=False
-        V = np.array(V)
-        V = V[V[:,2].argsort()]
-        zmp_violate=self.zmpViolation(self.zmp, V)
+        try:
+            V = np.array(V)
+            V = V[V[:,2].argsort()]
+            zmp_violate=self.zmpViolation(self.zmp, V)
+        except:
+            # print("not enough points")
+            zmp_violate=True
+            pass
 
         return not zmp_violate
 
@@ -295,14 +347,15 @@ class SurenaRobot(gym.Env):
         JointStates=p.getJointStates(self.SurenaID,self.jointIDs) ##JPos,JVel,JF
         contacts=p.getContactPoints(self.SurenaID,self.planeId)
 
-        # self.zmp=self.cal_ZMP()
+        self.zmp=self.cal_ZMP()
         # print(self.zmp)
-        # ZMP_in_SP=self.process_ZMP(contacts)
+        ZMP_in_SP=self.process_ZMP(contacts)
         ZMP_in_SP=True
 
         iscontact=bool(len(contacts))
 
         link_states=p.getLinkStates(self.SurenaID,[5,11])
+        self.current_feet_pos=[link_states[0][0],link_states[1][0]]
         z_l5,z_l11=link_states[0][0][2],link_states[1][0][2]
 
         if z_l5>=0.04 and z_l11>=0.04 :
@@ -311,12 +364,20 @@ class SurenaRobot(gym.Env):
             iscontact=True
 
         FzR,FzL=0.0,0.0
+        rc,lc=0,0
         ncontact=len(contacts)
         for k in range(ncontact):
             if contacts[k][3]==11:
                 FzR+=contacts[k][9]
+                lc+=1
             elif contacts[k][3]==5:
                 FzL+=contacts[k][9]
+                rc+=1
+
+        if rc==4:
+            self.last_feet_floor_x[0]=link_states[0][0][0]
+        elif lc==4:
+            self.last_feet_floor_x[1]=link_states[1][0][0]
 
         for jj in range(self.num_actions):
             Ts_raw[jj]=JointStates[jj][3]
@@ -359,21 +420,33 @@ class SurenaRobot(gym.Env):
             action=(np.divide((self.action_space.high-self.action_space.low),2))*action
         action=action+self.currentPos if DELTA_THETA else action
 
-        for i in range(self.num_actions):
-            if action[i]<self.joint_space["low"][i]:
-                action[i]=self.joint_space["low"][i]
-            elif action[i]>self.joint_space["high"][i]:
-                action[i]=self.joint_space["high"][i]
+        if TORQUE_CONTROL:
+  
+            action*=200
+            p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
+                            jointIndices=self.jointIDs,
+                            controlMode=p.POSITION_CONTROL,
+                            forces= action) 
+            p.stepSimulation()
+        else:
+            for i in range(self.num_actions):
+                if action[i]<self.joint_space["low"][i]:
+                    action[i]=self.joint_space["low"][i]
+                elif action[i]>self.joint_space["high"][i]:
+                    action[i]=self.joint_space["high"][i]
+            p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
+                                        jointIndices=self.jointIDs,
+                                        controlMode=p.POSITION_CONTROL,
+                                        targetPositions = action)  #forces=np.full((self.num_actions,),600)
+            p.stepSimulation()
+            
+         
 
-        p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
-                                    jointIndices=self.jointIDs,
-                                    controlMode=p.POSITION_CONTROL,
-                                    targetPositions = action
-                                    )  #forces=np.full((self.num_actions,),600)
-        p.stepSimulation() 
+
 
         observation, iscontact, powers, x, ZMP_in_SP=self.cal_observations() 
-        
+        # pace_penalty=cal_pace_penalty(0) #for right foot
+        # pace_penalty+=cal_pace_penalty(1) #for left foot
         if not iscontact:
             self.up+=1
         else:
@@ -457,19 +530,29 @@ class SurenaRobot(gym.Env):
         p.resetSimulation()
         self.planeId = p.loadURDF("plane.urdf") #ID:0
         self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation) 
-        p.enableJointForceTorqueSensor(self.SurenaID,4)
-        p.enableJointForceTorqueSensor(self.SurenaID,10)
+        p.enableJointForceTorqueSensor(self.SurenaID,5)
+        p.enableJointForceTorqueSensor(self.SurenaID,11)
         p.setGravity(0,0,-9.81)
         p.setTimeStep(1./T)
 
         if KNEE:
             self.bend_knee()
-        
+
         p.stepSimulation()
+        self.current_feet_pos=[[0.0054999,foor_y0_r,foot_z0],[0.0054999,-1*foor_y0_r,foot_z0]]
+        self.last_feet_floor_x=[0.0054999,0.0054999]
+        self.pace_cout=[0,0]
+        
         obs=self.cal_observations()[0]
         if NORMALIZE:
             temp=self.obs_high-self.obs_low
             obs=obs/temp
+
+        if TORQUE_CONTROL:
+            for j in self.jointIDs:
+                if p.getJointInfo(self.SurenaID, j)[2] == p.JOINT_REVOLUTE: 
+                    p.setJointMotorControl2(self.SurenaID, j, controlMode=p.VELOCITY_CONTROL, force=0)
+        
         
         return obs
 
@@ -589,7 +672,7 @@ wandb_entity=None
 #HERE
 
 # Algorithm specific arguments
-n_minibatch=32
+n_minibatch=16
 num_envs=1
 num_steps=1024#2048
 gamma=0.99
@@ -604,7 +687,7 @@ kle_rollback=False
 target_kl=0.03
 gae=True
 norm_adv=True
-anneal_lr=True
+anneal_lr=False
 clip_vloss=True
 
 #args = parser.parse_args()
@@ -739,7 +822,7 @@ class Agent(nn.Module):
         return self.critic(x)
 
     def from_check_point(self,state_dict_actor,state_dict_critic) : #new
-        print(self.actor_mean)
+        # print(self.actor_mean)
         self.actor_mean.load_state_dict(state_dict_actor)
         self.critic.load_state_dict(state_dict_critic)
         self.actor_mean.train()
@@ -782,6 +865,9 @@ def main(): #new
     next_obs = envs.reset()
     next_done = torch.zeros(num_envs).to(device)
     num_updates = total_timesteps // batch_size
+    lrnow="NA" #new
+    global lrglobal #new
+    lrglobal="NA" #new
     for update in range(1, num_updates+1):
 
         print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&",update)
@@ -789,6 +875,7 @@ def main(): #new
         if anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
             lrnow = lr(frac)
+            lrglobal=lrnow #new
             optimizer.param_groups[0]['lr'] = lrnow
 
         # TRY NOT TO MODIFY: prepare the execution of the game.
@@ -816,7 +903,7 @@ def main(): #new
                     break
 
         # bootstrap reward if not done. reached the batch limit
-        lrnow="NA"
+
         with torch.no_grad():
             last_value = agent.get_value(next_obs.to(device)).reshape(1, -1)
             if gae:
@@ -953,18 +1040,21 @@ def main(): #new
 
 try:
     main()
+    # JointStates=p.getJointStates(1,[0,1,2,3,4,5,6,7,8,9,10,11])
+    # print(JointStates)
 except KeyboardInterrupt:
-    print("Keyboard interrupt exception caught")
-    print("_saved model_")
-    torch.save({
-    'model_state_dict': (agent.actor_mean).state_dict(),
-    'optimizer_state_dict': optimizer.state_dict(),
-    }, "./CHECKPOINTS/modelactorTest"+"ctlC"+".tar")
+    if SAVE_MODEL:
+        print("Keyboard interrupt exception caught")
+        print("_saved model_")
+        torch.save({
+        'model_state_dict': (agent.actor_mean).state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'learning_rate':lrglobal,
+        }, "./CHECKPOINTS/modelactorTest"+"ctlC"+".tar")
 
-    torch.save({
-    'model_state_dict': (agent.critic).state_dict(),
-    }, "./CHECKPOINTS/modelcriticTest"+"ctlC"+".tar")
-
+        torch.save({
+        'model_state_dict': (agent.critic).state_dict(),
+        }, "./CHECKPOINTS/modelcriticTest"+"ctlC"+".tar")
 
 
 
