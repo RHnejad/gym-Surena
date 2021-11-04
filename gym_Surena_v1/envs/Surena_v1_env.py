@@ -5,9 +5,10 @@ from gym import spaces
 import numpy as np
 import time
 from matplotlib.pyplot import flag
-from SURENA.Robot import *
+from Robot import *
 
-WITH_GUI=1
+global WITH_GUI
+WITH_GUI=0
 KNEE=1
 ACTIVATE_SLEEP=0
 if not WITH_GUI: ACTIVATE_SLEEP=False
@@ -26,11 +27,11 @@ X0=-0.517
 Z0=0.9727
 foot_z0=0.037999 
 foor_y0_r=0.11380
-T=200.
+T=50.
+delta=200./T*10 #check *10
 
-if KNEE: from SURENA.DCM import *
+if KNEE: from DCM import *
     
-
 # global x
 # x=0
 global com_for_plot
@@ -41,15 +42,16 @@ class SurenaRobot_v1(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self,gui=None):
         super(SurenaRobot_v1, self).__init__()
-
-        self.action_min=np.array([0,-0.0018,0,-0.0007,0],dtype=np.float32)
-        self.action_max=np.array([0.0015,0.0014,0.004,0.0007,3],dtype=np.float32)
+        global WITH_GUI
+        if gui=="gui" : WITH_GUI=True
+        self.action_min=np.array([0,-0.0018*delta,0,-0.0007*delta,0],dtype=np.float32)
+        self.action_max=np.array([0.0015*delta,0.0014*delta,0.004*delta,0.0007*delta,3],dtype=np.float32)
 
         self.observation_space = gym.spaces.box.Box(
-                low=np.array([0,-0.0018,0,-0.0007,0,-0.5,-0.5],dtype=np.float32),
-                high=np.array([0.0015,0.0014,0.004,0.0007,3,5,0.5],dtype=np.float32))
+                low=np.array([0,-0.0018*delta,0,-0.0007*delta,0,-0.5,-0.5],dtype=np.float32),
+                high=np.array([0.0015*delta,0.0014*delta,0.004*delta,0.0007*delta,3,5,0.5],dtype=np.float32))
 
         #[com_x,com_y,ankle_x,ankle_y,(DS,R,L)]
         self.action_space=gym.spaces.box.Box(
@@ -127,32 +129,34 @@ class SurenaRobot_v1(gym.Env):
                                         targetPositions = All)  #forces=np.full((self.num_actions,),600)
         p.stepSimulation()
 
+        # print("*______",action)
+        # print("_______",All)
         
         SPos, SOrn = p.getBasePositionAndOrientation(self.SurenaID)
         LinearVel,AngularVel=p.getBaseVelocity(self.SurenaID)  
 
-        done= SPos[2]<0.5
+        done= SPos[2]<0.5 or SPos[0]>2.0
 
         self.observations[0:self.num_actions]=action
         self.observations[5:7]=SPos[1:3]
 
         param=np.array([LinearVel[0],
+            (2-SPos[0]),
             self.cal_power(), 
             (np.abs(SPos[1])**2), 
             (np.abs(SPos[2]-Z0))**2,
             (self.step_counter/1000)])
 
-        weights=np.array([ +8.0 , -0.00001 ,-7.0 ,-1.0, 0. ])
+        weights=np.array([ +3.0 ,-3.8, -0.00001 ,-7.0 ,-1.0, 0. ])
         #heree
         reward_array=param*weights
-        reward_s=(sum(reward_array)+1.625*(float(not done)))#-1.7*float(bool(self.up))
+        reward_s=sum(reward_array)-0.002#+1.625*(float(not done)))#-1.7*float(bool(self.up))
 
         global com_for_plot
         com_for_plot[0].append(action[0])
         com_for_plot[1].append(action[-1])
 
-
-        #if done:
+        # if done:
         #    plt.figure()
         #    plt.plot(com_for_plot[0],com_for_plot[1],"*")
         #    plt.show()
