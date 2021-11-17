@@ -1,74 +1,112 @@
+num_steps=1024
+model_actor_mean_name="./CHECKPOINTS/modelactorTestctlC.tar"
+model_critic_name="./CHECKPOINTS/modelcriticTestctlC.tar"
+
+
 import gym
 from gym import spaces
+from matplotlib.pyplot import flag
 import pybullet as p
 import numpy as np
 import time
 import pybullet_data
 
-ACTION=[]
-REWS=np.array([])
-save_actions=0
 
-TENDOF=0
-DELTA_THETA =1
+WITH_GUI = 0
+#به نظرم اون ۲۰ های مچ رو کمتر کن
+
+TENDOF=1
+MINDOF=0
+
+DELTA_THETA =0
+TORQUE_CONTROL=1
+
 ACTIVATION=0
-KNEE=1
-NORMALIZE=1
-WITH_GUI =1
-SAVE_MODEL=1
+KNEE=0
+FOOT_PLACEMENT=0
 
+NORMALIZE=1
+
+ACTIVATE_SLEEP,A_S_AFTER = False,None
+
+
+if not WITH_GUI:
+    ACTIVATE_SLEEP=False
+if MINDOF:
+    TENDOF=0
+
+#"SURENA/sfixedWLess.urdf"
+#"SURENA/sfixedWless6dof.urdf"
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-file_name="SURENA/sfixed.urdf"
+file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/sfixedWless6dof.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
 
-    
+deltaS=0.5    
 X0=-0.517
 Z0=0.9727
-foot_z0=0.03799
-T=50.
+foot_z0=0.037999 
+foor_y0_r=0.11380
+T=100.
 
 if KNEE:
-    from SURENA.kasra.Robot import *
-    from SURENA.kasra.DCM import *
+    from kasra.Robot import *
+    from kasra.DCM import *
     surena = Robot(shank = 0.36, hip = 0.37, pelvis_lengt = 0.115)
-    planner = DCMPlanner(0.7, 1.5, 0.45,1./200.) 
+    planner = DCMPlanner(0.7, 1.5, 0.45,1./T) 
 
 
 class SurenaRobot(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self,gui=""):
         super(SurenaRobot, self).__init__()
+        if gui=="gui" : 
+            global WITH_GUI
+            WITH_GUI=1
 
         VelList=[25,25,38,60,50,50,25,25,38,60,50,50]
 
         self.theta_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4 ], dtype=np.float32)
         self.theta_low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7], dtype=np.float32)
 
-        self.thetaDot_high=high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
+        self.thetaDot_high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
         self.thetaDot_low=np.multiply (np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T)            
         
+        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+20,27+10 ], dtype=np.float32),3.0)
+        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-20,-27-10], dtype=np.float32),3.0)
+        #multiplied to match humanoid_running order and +20 for ankle torques to match better robot versions
+
         self.obs_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
                 315,315,315,315,315,315, 315,315,315,315,315,315,
-                60,60,40,72,27,27, 60,60,40,72,27,27,
+                #60,60,40,72,27,27, 60,60,40,72,27,27,
                 10,1.5,3.0,3.0,3.0,
                 1.0,1.0,1.0,1.0, 5.0,5.0,5.0,
-                600,600], dtype=np.float32)
+                250,250], dtype=np.float32)
         self.obs_low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7,
                 -315,-315,-315,-315,-315,-315, -315,-315,-315,-315,-315,-315,
-                -60,-60,-40,-72,-27,-27,-60,-60,-40,-72,-27,-27,
+                #-60,-60,-40,-72,-27,-27,-60,-60,-40,-72,-27,-27,
                 -10,-1.5,-3.0,-3.0,-3.0,
                 -1.0,-1.0,-1.0,-1.0, -5.0,-5.0,-5.0,
-                -600,-600], dtype=np.float32)
+                0,0], dtype=np.float32)
 
         
         if TENDOF:
-            obs_high,obs_low=np.delete(self.obs_high,[0,6,12,18,24,30]),np.delete(self.obs_low,[0,6,12,18,24,30])
-            theta_high,theta_low=np.delete(self.theta_high,[0,6]),np.delete(self.theta_low,[0,6])
-            thetaDot_high,thetaDot_low=np.delete(self.thetaDot_high,[0,6]),np.delete(self.thetaDot_low,[0,6])
+            self.obs_high,self.obs_low=np.delete(self.obs_high,[0,6,12,18]),np.delete(self.obs_low,[0,6,12,18])
+            self.theta_high,self.theta_low=np.delete(self.theta_high,[0,6]),np.delete(self.theta_low,[0,6])
+            self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,[0,6]),np.delete(self.thetaDot_low,[0,6])
+            self.torques_high,self.torques_low=np.delete(self.torques_high,[0,6]),np.delete(self.torques_low,[0,6])
             VelList=np.delete(VelList,[0,6])
+            
+        if MINDOF:
+            temp=[0,4,5,6,10,11]
+            self.theta_high,self.theta_low=np.delete(self.theta_high,temp),np.delete(self.theta_low,temp)
+            self.thetaDot_high,self.thetaDot_low=np.delete(self.thetaDot_high,temp),np.delete(self.thetaDot_low,temp)
+            self.torques_high,self.torques_low=np.delete(self.torques_high,temp),np.delete(self.torques_low,temp)
+            VelList=np.delete(VelList,temp)
+            temp=temp+[12,16,17,18,22,23]
+            self.obs_high,self.obs_low=np.delete(self.obs_high,temp),np.delete(self.obs_low,temp)
 
         #________________________________________
         
@@ -76,11 +114,16 @@ class SurenaRobot(gym.Env):
                 low=self.obs_low,
                 high=self.obs_high)
 
-        self.action_space=gym.spaces.box.Box(
-                low=self.thetaDot_low,
-                high=self.thetaDot_high) if DELTA_THETA else gym.spaces.box.Box(
-                low=self.theta_low,
-                high=self.theta_high)
+        if TORQUE_CONTROL:
+            self.action_space=(gym.spaces.box.Box(
+                    low=self.torques_low,
+                    high=self.torques_high)) 
+        else:
+            self.action_space=(gym.spaces.box.Box(
+                    low=self.thetaDot_low,
+                    high=self.thetaDot_high)) if DELTA_THETA else (gym.spaces.box.Box(
+                    low=self.theta_low,
+                    high=self.theta_high))
 
         self.joint_space = {
                 "low":self.theta_low,
@@ -90,13 +133,13 @@ class SurenaRobot(gym.Env):
         self.maxVel=np.multiply(np.array(VelList, dtype=np.float32),2*(np.pi)/60)
         self.minVel=np.multiply(self.maxVel,-1)
 
-        self.num_actions= (10 if TENDOF else 12)
-        self.observation_dimensions= 3*self.num_actions+14 #28 if TENDOF else 32
+        self.num_actions= (10 if TENDOF else 12) if not MINDOF else 6
+        self.observation_dimensions= 2*self.num_actions+14 
 
         self.currentPos=np.zeros((self.num_actions,))
             
-        self.rightLegID=[1,2,3,4,5]  if TENDOF else list(range(6))
-        self.leftLegID=[7,8,9,10,11]  if TENDOF else list(range(6,12))
+        self.rightLegID=([1,2,3,4,5]  if TENDOF else list(range(6))) if not MINDOF else [1,2,3]
+        self.leftLegID=([7,8,9,10,11]  if TENDOF else list(range(6,12)) ) if not MINDOF else [7,8,9]
         self.jointIDs=self.rightLegID+self.leftLegID
             
         self.physicsClient = p.connect(p.GUI) if WITH_GUI else p.connect(p.DIRECT)
@@ -107,13 +150,216 @@ class SurenaRobot(gym.Env):
         self.up=0
         self.planeId=0
         self.SurenaID=1
-        # g=-9.81
-        # p.setGravity(0,0,g)
+        self.zmp=[0,0,0]
+        self.startPos = [0,0,0]
+        self.startOrientation = p.getQuaternionFromEuler([0,0,0])
+
+        self.paces=[0.25,0.25] #0:right 1:left
+        self.current_feet_pos=[]
+        self.last_feet_floor_x=[]
+        self.pace_cout=[]
+        self.last_x=None
+
+        self.last_on_floor=None #0:right 1:left
+        self.current_on_floor=None
+        self.toeoff_x=0
+
         self.reset()
 
-    #________________________________________
+#____step placement___________________________________
+    def create_step_plcament(self):
+        pass
+    #     if right_foot_first :
+    #         if self.foot_place_count_right==0:
+    #             next_foor_place_right=0.5*self.dS_right*self.foot_place_count_right+1
+    #     elif self.foot_place_count_left==0:
+    #             next_foor_place_left=0.5*self.dS_left*self.foot_place_count_left+1
+    #     else:        
+    #         next_foor_place_right=self.dS_right*self.foot_place_count_right+1
+    #         next_foor_place_left=self.dS_left*self.foot_place_count_left+1
 
-    def Observations(self): 
+    # def cal_pace_penalty(self,foot):
+    #     deltaX=self.current_feet_pos[foot][0]-self.last_feet_floor_x[foot]
+    #     if deltaX<0:
+    #         return 0 #CHECK, CHANGE I DON'T KNOW !!!!
+    #     if ?
+    #     theta_limit=np.arcsin(np.sqrt((self.paces[foot]-deltaX)/self.paces[foot]))
+    #     theta_current=np.arctan()
+
+    #     pass
+
+#____cast________________________________________________________________________________________
+    #from_CAST
+    def zmp_ft(self, is_right):
+        # measurement of zmp relative to sensor local coordinate using f/t sensor
+        sole_id = 5 if is_right else 11
+        ft_data = p.getJointState(self.SurenaID, sole_id)[2]
+        if ft_data[2] == 0:
+            return [0, 0, 0]
+        else:
+            x_zmp = -(ft_data[4]) / (ft_data[2])
+            y_zmp = -(ft_data[3]) / (ft_data[2])
+        return [x_zmp, y_zmp, ft_data[2]]
+
+    def cal_ZMP(self): 
+        total_zmp = np.zeros((3, 1))
+        l_x_zmp, l_y_zmp, l_fz = self.zmp_ft(False)
+        l_zmp = self.ankle2pelvis(np.array([l_x_zmp, l_y_zmp, 0.0]), False) # left foot zmp relative to pelvis
+        if abs(l_fz) < 5:
+            l_fz = 0
+
+        r_x_zmp, r_y_zmp, r_fz = self.zmp_ft(True)
+        r_zmp = self.ankle2pelvis(np.array([r_x_zmp, r_y_zmp, 0.0]), True) 
+        if abs(r_fz) < 5:
+            r_fz = 0
+            
+        if l_fz + r_fz == 0:
+            #print("No foot contact!!")
+            pass
+        else:
+            total_zmp = (r_zmp * r_fz + l_zmp * l_fz) / (l_fz + r_fz)
+        return total_zmp
+
+    #________________
+   
+    def rotateAxisX(self, phi):
+        # alpha: angle in rad 
+        rot = np.array([[1, 0, 0], [0, np.cos(phi), -np.sin(phi)], [0, np.sin(phi), np.cos(phi)]])
+        return rot
+
+    def rotateAxisY(self, theta):
+        # theta: angle in rad 
+        rot = np.array([[np.cos(theta), 0, np.sin(theta)], [0, 1, 0], [-np.sin(theta), 0, np.cos(theta)]])
+        return rot
+
+    def rotateAxisZ(self, psi):
+        # psi: angle in rad 
+        rot = np.array([[np.cos(psi), -np.sin(psi), 0], [np.sin(psi), np.cos(psi), 0], [0, 0, 1]])
+        return rot
+
+    def homoTrans(self, axis, q, p):
+        # axis: rotation axis relative to global coordinate (0 -> x, 1 -> y, 2 -> z)
+        # q: rotation angle
+        # p: 3d array indicates translation 
+        if axis == 0:
+            return(np.block([[self.rotateAxisX(q), p.reshape((3,1))], [np.zeros((1, 3)), 1]]))
+        elif axis == 1:
+            return(np.block([[self.rotateAxisY(q), p.reshape((3,1))], [np.zeros((1, 3)), 1]]))
+        elif axis == 2:
+            return(np.block([[self.rotateAxisZ(q), p.reshape((3,1))], [np.zeros((1, 3)), 1]]))
+
+    def ankle2pelvis(self, p_a, is_right):
+        # p_a position relative to ankle coordinate
+        shank = 0.36
+        thigh = 0.37
+        torso = 0.115
+        if is_right:
+            t1 = self.homoTrans(2, p.getJointState(self.SurenaID, 0)[0], np.array([0, -0.115, 0])) # hip yaw
+            t2 = self.homoTrans(0, p.getJointState(self.SurenaID, 1)[0], np.zeros((1,3))) # hip roll
+            t3 = self.homoTrans(1, p.getJointState(self.SurenaID, 2)[0], np.zeros((1,3))) # hip pitch
+            t4 = self.homoTrans(1, p.getJointState(self.SurenaID, 3)[0], np.array([0, 0, -thigh])) # knee pitch
+            t5 = self.homoTrans(0, 0, np.array([0, 0, -shank]))
+            p_w = t1 @ t2 @ t3 @ t4 @ t5 @ (np.block([[p_a.reshape((3, 1))], [1]]))
+            return p_w[0:3]
+
+        else:
+            t1 = self.homoTrans(2, p.getJointState(self.SurenaID, 6)[0], np.array([0, 0.115, 0])) # hip yaw
+            t2 = self.homoTrans(0, p.getJointState(self.SurenaID, 7)[0], np.zeros((1,3))) # hip roll
+            t3 = self.homoTrans(1, p.getJointState(self.SurenaID, 8)[0], np.zeros((1,3))) # hip pitch
+            t4 = self.homoTrans(1, p.getJointState(self.SurenaID, 9)[0], np.array([0, 0, -thigh])) # knee pitch
+            t5 = self.homoTrans(0, 0, np.array([0, 0, -shank]))
+            p_w = t1 @ t2 @ t3 @ t4 @ t5 @ (np.block([[p_a.reshape((3, 1))], [1]]))
+            return p_w[0:3]
+
+    def is_left(self,P0, P1, P2):
+        return (P1[0] - P0[0]) * (P2[1] - P0[1]) - (P2[0] - P0[0]) * (P1[1] - P0[1])
+
+
+    def zmpViolation(self, zmp, V):
+        # checks if zmp is inside the polygon shaped by
+        # vertexes V using Windings algorithm
+        # inspiration: http://www.dgp.toronto.edu/~mac/e-stuff/point_in_polygon.py
+        if (V.shape[0] == 8):
+            V = np.delete(V,3,0)
+            V = np.delete(V,3,0)
+            V = V.tolist()
+            v = list([V[0],V[2],V[4],V[5],V[3],V[1],V[0]])
+            V = np.array(v)
+        if (V.shape[0] == 4):
+            V = V.tolist()
+            v = list([V[0],V[2],V[3],V[1],V[0]])
+            V = np.array(v)
+            
+        wn = 0
+        for i in range(len(V)-1):     # edge from V[i] to V[i+1]
+            if V[i][1] <= zmp[1]:        # start y <= P[1]
+                if V[i+1][1] > zmp[1]:     # an upward crossing
+                    if self.is_left(V[i], V[i+1], zmp) > 0: # P left of edge
+                        wn += 1           # have a valid up intersect
+            else:                      # start y > P[1] (no test needed)
+                if V[i+1][1] <= zmp[1]:    # a downward crossing
+                    if self.is_left(V[i], V[i+1], zmp) < 0: # P right of edge
+                        wn -= 1           # have a valid down intersect
+        if wn == 0:           
+            return True
+        else:
+            return False        
+#_____zmp________
+    def process_ZMP(self,cnt):
+
+        #getting support polygon
+        V = list("")
+        ncontact=len(cnt)
+        flagR,flagL=True,True
+        if ncontact>0:
+            for k in range(ncontact):
+                if cnt[k][3]==5 and flagR:
+                    flagR=False
+                    contact = p.getLinkState(self.SurenaID,5)[0]
+                    V.append([contact[0]-0.09046, contact[1]-0.0811, contact[0]-0.09046 + contact[1]+0.0811 ])
+                    V.append([contact[0]-0.09046, contact[1]+0.0789, contact[0]-0.09046 + contact[1]-0.0789])
+                    V.append([contact[0]+0.1746, contact[1]-0.0811, contact[0]+0.1746 + contact[1]+0.0811])
+                    V.append([contact[0]+0.1746, contact[1]+0.0789, contact[0]+0.1746 + contact[1]-0.0789])
+                if cnt[k][3]==11 and flagL:
+                    flagL=False
+                    contact = p.getLinkState(self.SurenaID,11)[0]
+                    V.append([contact[0]-0.09046, contact[1]+0.0811, contact[0]-0.09046 + contact[1]+0.0811 ])
+                    V.append([contact[0]-0.09046, contact[1]-0.0789, contact[0]-0.09046 + contact[1]-0.0789])
+                    V.append([contact[0]+0.1746, contact[1]+0.0811, contact[0]+0.1746 + contact[1]+0.0811])
+                    V.append([contact[0]+0.1746, contact[1]-0.0789, contact[0]+0.1746 + contact[1]-0.0789])
+
+        zmp_violate=False
+        try:
+            V = np.array(V)
+            V = V[V[:,2].argsort()]
+            zmp_violate=self.zmpViolation(self.zmp, V)
+        except:
+            # print("not enough points")
+            zmp_violate=True
+            pass
+
+        return not zmp_violate
+
+#________________
+    def cal_stepping_reward(self,cforcses):
+        delta_s=0.0
+        if cforcses[0]>0.001 and cforcses[1]>0.001: #then double support
+            self.last_on_floor=self.current_on_floor
+        elif cforcses[0]>0.001 and cforcses[1]<0.001: #right on ground
+            self.current_on_floor=0
+            if self.last_on_floor==1: 
+                delta_s=self.current_feet_pos[0][0]-self.current_feet_pos[1][0] #right-left
+
+        elif cforcses[0]<0.001 and cforcses[1]>0.001: #left on ground
+            self.current_on_floor=1
+            if self.last_on_floor==0: 
+                delta_s=self.current_feet_pos[1][0]-self.current_feet_pos[0][0] #left-right
+     
+        return max(0,delta_s-0.04)
+
+#____________________________________________________________________________________________
+
+    def cal_observations(self): 
         Ts_raw=np.zeros(self.num_actions)
         Theta_dots=np.zeros(self.num_actions)
         Powers=np.zeros(self.num_actions)
@@ -122,9 +368,16 @@ class SurenaRobot(gym.Env):
         LinearVel,AngularVel=p.getBaseVelocity(self.SurenaID)
         JointStates=p.getJointStates(self.SurenaID,self.jointIDs) ##JPos,JVel,JF
         contacts=p.getContactPoints(self.SurenaID,self.planeId)
+
+        self.zmp=self.cal_ZMP()
+        # print(self.zmp)
+        ZMP_in_SP=self.process_ZMP(contacts)
+        ZMP_in_SP=True
+
         iscontact=bool(len(contacts))
 
         link_states=p.getLinkStates(self.SurenaID,[5,11])
+        self.current_feet_pos=[list(link_states[0][0]),list(link_states[1][0])]
         z_l5,z_l11=link_states[0][0][2],link_states[1][0][2]
 
         if z_l5>=0.04 and z_l11>=0.04 :
@@ -133,12 +386,22 @@ class SurenaRobot(gym.Env):
             iscontact=True
 
         FzR,FzL=0.0,0.0
+        rc,lc=0,0
         ncontact=len(contacts)
         for k in range(ncontact):
-            if contacts[k][3]==11:
+            if contacts[k][3]==5:
                 FzR+=contacts[k][9]
-            elif contacts[k][3]==5:
+                lc+=1
+                
+            elif contacts[k][3]==11:
                 FzL+=contacts[k][9]
+                rc+=1
+
+
+        if rc==4:
+            self.last_feet_floor_x[0]=link_states[0][0][0]
+        elif lc==4:
+            self.last_feet_floor_x[1]=link_states[1][0][0]
 
         for jj in range(self.num_actions):
             Ts_raw[jj]=JointStates[jj][3]
@@ -159,76 +422,88 @@ class SurenaRobot(gym.Env):
         #without x 
         self.currentPos=observation_new[0:self.num_actions] 
 
-        observation_new[2*self.num_actions: 3*self.num_actions]=Ts_raw
-        observation_new[3*self.num_actions: 3*self.num_actions+2]=np.array(SPos)[1:3]
-        observation_new[3*self.num_actions+2: 3*self.num_actions+5]=np.array(LinearVel)
+        #observation_new[2*self.num_actions: 3*self.num_actions]=Ts_raw
+        observation_new[2*self.num_actions: 2*self.num_actions+2]=np.array(SPos)[1:3]
+        observation_new[2*self.num_actions+2: 2*self.num_actions+5]=np.array(LinearVel)
 
-        observation_new[3*self.num_actions+5: 3*self.num_actions+9]=np.array(SOrn)
-        observation_new[3*self.num_actions+9: 3*self.num_actions+12]=np.array(AngularVel)
+        observation_new[2*self.num_actions+5: 2*self.num_actions+9]=np.array(SOrn)
+        observation_new[2*self.num_actions+9: 2*self.num_actions+12]=np.array(AngularVel)
 
-        observation_new[3*self.num_actions+12: 3*self.num_actions+14]=np.array([FzR, FzL]) #F_z_r and F_z_l
+        observation_new[2*self.num_actions+12: 2*self.num_actions+14]=np.array([FzR, FzL]) #F_z_r and F_z_l
 
-
-        return observation_new, iscontact, powers, x
+        return observation_new, iscontact, powers, x, ZMP_in_SP
 
     #________________________________________
 
     def step(self, action):
 
-        time.sleep(1./T)
+        if ACTIVATE_SLEEP:
+            time.sleep(1./T)
 
         if ACTIVATION:
             action=(np.divide((self.action_space.high-self.action_space.low),2))*action
         action=action+self.currentPos if DELTA_THETA else action
 
-        for i in range(self.num_actions):
-            if action[i]<self.joint_space["low"][i]:
-                action[i]=self.joint_space["low"][i]
-            elif action[i]>self.joint_space["high"][i]:
-                action[i]=self.joint_space["high"][i]
+        if TORQUE_CONTROL:
+            action*=20
+            p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
+                            jointIndices=self.jointIDs,
+                            controlMode=p.TORQUE_CONTROL,
+                            forces= action) 
+            p.stepSimulation()
+        else:
+            for i in range(self.num_actions):
+                if action[i]<self.joint_space["low"][i]:
+                    action[i]=self.joint_space["low"][i]
+                elif action[i]>self.joint_space["high"][i]:
+                    action[i]=self.joint_space["high"][i]
+            p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
+                                        jointIndices=self.jointIDs,
+                                        controlMode=p.POSITION_CONTROL,
+                                        targetPositions = action)  #forces=np.full((self.num_actions,),600)
+            p.stepSimulation()
+            
 
-        p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
-                                    jointIndices=self.jointIDs,
-                                    controlMode=p.POSITION_CONTROL,
-                                    targetPositions = action
-                                    )  #forces=np.full((self.num_actions,),600)
-        p.stepSimulation() 
-
-        observation, iscontact, powers, x=self.Observations() 
-        
-
+        observation, iscontact, powers, x, ZMP_in_SP=self.cal_observations() 
+        # pace_penalty=cal_pace_penalty(0) #for right foot
+        # pace_penalty+=cal_pace_penalty(1) #for left foot
         if not iscontact:
             self.up+=1
         else:
             self.up=0
 
-        done=(observation[3*self.num_actions+1]<0.4) #or (self.up>=20) #or .... ????
+        done=(observation[2*self.num_actions+1]<0.6) or (self.up>10) #or .... ????  #or (not ZMP_in_SP)
 
         if not done:
             self.step_counter+=1
             
-        #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz]
-        param=np.array([observation[3*self.num_actions+2],
-            powers, 
-            (np.abs(observation[3*self.num_actions])**2), 
-            (np.abs(observation[3*self.num_actions+1]-Z0))**2,
-            (self.step_counter/num_steps)])
+        sum_thetaDot=sum((observation[self.num_actions:2*self.num_actions])**2)
+        sum_orn=sum(np.abs(self.startOrientation-observation[2*self.num_actions+5: 2*self.num_actions+9]))
+        stepping_reward=self.cal_stepping_reward(observation[-2:])
 
-        #weights=np.array([+ 0.1 ,+5.0 , +500.0 ,  -6.0 , -1.0 ,-1.0 ,-1.0])
-        weights=np.array([ +5.0 , -0.001 ,-7.0 ,-7.0, 10.])
+        #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz 7.SigmathethatDot^2 8.SigmaabsdeltaOrn]
+        param=np.array([x,#+observation[2*self.num_actions+2]/10,
+            powers, 
+            max(0,  np.exp( np.abs(observation[2*self.num_actions])-0.130)  -1.), 
+            max(0,  np.exp( np.abs(observation[2*self.num_actions+1]-Z0)-0.03)  -1.), 
+            (self.step_counter/num_steps),
+            sum_thetaDot,
+            sum_orn,
+            stepping_reward,
+            min(  max(self.current_feet_pos[0][0],self.current_feet_pos[1][0]) -x   ,0),
+            (sum(np.abs(observation[2*self.num_actions+5: 2*self.num_actions+9]- self.startOrientation)))])
+
+        weights=np.array([ +2.1 , 0.0 ,-0.05 ,-0.02, 0 ,0, 0, +0.0, 0.7,-0.7])
 
         #heree
         reward_array=param*weights
-        reward_s=(sum(reward_array)+1.625*(float(not done)))
+        # print(reward_array)
+        reward_s=sum(reward_array)+1.295 -0.5* self.up#-0.095 #-0.007*float(bool(self.up))
         #print("reward:",reward_array)
 
-        if done:
-            print(self.step_counter)
+        # if done:
+        #     print(self.step_counter)
 
-        if save_actions:
-            if self.first_step:
-                ACTION.append("*")
-            ACTION.append(action.tolist())
 
         self.first_step=False
 
@@ -264,34 +539,40 @@ class SurenaRobot(gym.Env):
                                             controlMode=p.POSITION_CONTROL,
                                             targetPosition = leftConfig[index])
                 p.stepSimulation()
-        time.sleep(0.25)
+        if ACTIVATE_SLEEP:
+            time.sleep(1)
 
     #________________________________________
 
     def reset(self):
         self.first_step=True
         self.step_counter=0
-        startPos = [0,0,0]
-        startOrientation = p.getQuaternionFromEuler([0,0,0])
         p.resetSimulation()
         self.planeId = p.loadURDF("plane.urdf") #ID:0
-        self.SurenaID=p.loadURDF(file_name,startPos, startOrientation) 
+        self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation) 
+        p.enableJointForceTorqueSensor(self.SurenaID,5)
+        p.enableJointForceTorqueSensor(self.SurenaID,11)
         p.setGravity(0,0,-9.81)
         p.setTimeStep(1./T)
+
         if KNEE:
             self.bend_knee()
 
-        # obs=np.zeros(self.observation_dimensions)
-        # obs[2*self.num_actions:2*self.num_actions+2]=[0.0,Z0] #ignored x if not: :2*self.num_actions+2 and [X0,0.0,Z0]
-        # obs[self.observation_dimensions-2:self.observation_dimensions]=[-200,-200] #???????????
-        # p.enableJointForceTorqueSensor(self.SurenaID,4)
-        # p.enableJointForceTorqueSensor(self.SurenaID,10)
-        
         p.stepSimulation()
-        obs=self.Observations()[0]
+        self.current_feet_pos=[[0.0054999,foor_y0_r,foot_z0],[0.0054999,-1*foor_y0_r,foot_z0]]
+        self.last_feet_floor_x=[0.0054999,0.0054999]
+        self.pace_cout=[0,0]
+        
+        obs=self.cal_observations()[0]
         if NORMALIZE:
             temp=self.obs_high-self.obs_low
             obs=obs/temp
+
+        if TORQUE_CONTROL:
+            for j in self.jointIDs:
+                if p.getJointInfo(self.SurenaID, j)[2] == p.JOINT_REVOLUTE: 
+                    p.setJointMotorControl2(self.SurenaID, j, controlMode=p.VELOCITY_CONTROL, force=0)
+        
         
         return obs
 
@@ -302,3 +583,4 @@ class SurenaRobot(gym.Env):
         p.disconnect()
         print(p.getConnectionInfo())
     #________________________________________
+
