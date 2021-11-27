@@ -13,7 +13,6 @@ import pybullet_data
 
 FEEDBACK,FEEDBACK2=[],[]
 
-
 WITH_GUI = 0
 #به نظرم اون ۲۰ های مچ رو کمتر کن
 
@@ -24,9 +23,10 @@ DELTA_THETA =0
 TORQUE_CONTROL=1
 
 ACTIVATION= 1#action
+#نکته: بدون اکتیویشن در حالت تورک کنترل نیازه که یه ضریبی رو اضافه کنی که تو اکشن است\ ضرب کنه چون خیلی حروجی های کمی میده
 KNEE=0
 
-NORMALIZE=1 #observation
+NORMALIZE=1#observation
 
 ACTIVATE_SLEEP,A_S_AFTER = 0,None
 
@@ -39,7 +39,7 @@ if MINDOF:
 #"SURENA/sfixedWless6dof.urdf"
 
 #file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/sfixedWless6dof.urdf"
+file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
 #file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
   
 # X0=-0.517
@@ -47,7 +47,7 @@ Z0=0.9727
 foot_z0=0.037999 
 foor_y0_r=0.11380
 T=100.
-beta=2.#7.5
+beta=0.7#7.5
 
 if KNEE:
     from kasra.Robot import *
@@ -75,8 +75,8 @@ class SurenaRobot(gym.Env):
         self.thetaDot_high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
         self.thetaDot_low=np.multiply (np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T)            
         
-        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27,27], dtype=np.float32),beta)
-        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27,-27], dtype=np.float32),beta)
+        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+10,27+10], dtype=np.float32),beta)
+        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-10,-27-10], dtype=np.float32),beta)
         #multiplied to match humanoid_running order and +20 for ankle torques to match better robot versions
 
         self.obs_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
@@ -144,7 +144,7 @@ class SurenaRobot(gym.Env):
         self.currentPos=np.zeros((self.num_actions,),dtype=np.float32)
             
         rightLegID=([1,2,3,4,5]  if TENDOF else list(range(6))) if not MINDOF else [1,2,3]
-        leftLegID=([7,8,9,10,11]  if TENDOF else list(range(6,12)) ) if not MINDOF else [7,8,9]
+        leftLegID=([7,8,9,10,11]  if TENDOF else list(range(6,12)) ) if not MINDOF else [5,6,7]
         self.jointIDs=rightLegID+leftLegID
             
         self.physicsClient = p.connect(p.GUI) if WITH_GUI else p.connect(p.DIRECT)
@@ -406,37 +406,38 @@ class SurenaRobot(gym.Env):
 
         iscontact=bool(len(self.contacts))
 
-        self.link_states_feet=p.getLinkStates(self.SurenaID,[5,11,4,10]) 
-        self.current_feet_pos=[list(self.link_states_feet[0][0]),list(self.link_states_feet[1][0])]
-        z_l5,z_l11=self.link_states_feet[0][0][2],self.link_states_feet[1][0][2]
-
-        if z_l5>=0.04 and z_l11>=0.04 :
-            iscontact=False
-        elif z_l5<=foot_z0 or z_l11<=foot_z0: #double checks and if iscontact was decided as False but in fact ther is contact, corrects it
-            iscontact=True
-
         FzR,FzL=0.0,0.0
-        rc,lc=0,0
-        ncontact=len(self.contacts)
-        for k in range(ncontact):
-            if self.contacts[k][3]==5:
-                FzR+=self.contacts[k][9]
-                lc+=1
-                
-            elif self.contacts[k][3]==11:
-                FzL+=self.contacts[k][9]
-                rc+=1
+        if not MINDOF:
+            self.link_states_feet=p.getLinkStates(self.SurenaID,[5,11,4,10]) 
+            self.current_feet_pos=[list(self.link_states_feet[0][0]),list(self.link_states_feet[1][0])]
+            z_l5,z_l11=self.link_states_feet[0][0][2],self.link_states_feet[1][0][2]
 
-        self.zmp=self.cal_ZMP([FzR,FzL])
-        
-        FEEDBACK.append(list(self.zmp[:2]))
-        temp=self.cal_ZMP_cast()
-        # FEEDBACK2.append(list(self.cal_ZMP_cast))
+            if z_l5>=0.04 and z_l11>=0.04 :
+                iscontact=False
+            elif z_l5<=foot_z0 or z_l11<=foot_z0: #double checks and if iscontact was decided as False but in fact ther is contact, corrects it
+                iscontact=True
+       
+            rc,lc=0,0
+            ncontact=len(self.contacts)
+            for k in range(ncontact):
+                if self.contacts[k][3]==5:
+                    FzR+=self.contacts[k][9]
+                    lc+=1
+                    
+                elif self.contacts[k][3]==11:
+                    FzL+=self.contacts[k][9]
+                    rc+=1
 
-        if rc==4:
-            self.last_feet_floor_x[0]=self.link_states_feet[0][0][0]
-        elif lc==4:
-            self.last_feet_floor_x[1]=self.link_states_feet[1][0][0]
+            self.zmp=self.cal_ZMP([FzR,FzL])
+            
+            FEEDBACK.append(list(self.zmp[:2]))
+            temp=self.cal_ZMP_cast()
+            # FEEDBACK2.append(list(self.cal_ZMP_cast))
+
+            if rc==4:
+                self.last_feet_floor_x[0]=self.link_states_feet[0][0][0]
+            elif lc==4:
+                self.last_feet_floor_x[1]=self.link_states_feet[1][0][0]
 
         for jj in range(self.num_actions):
             Ts_raw[jj]=self.JointStates[jj][3]
@@ -478,6 +479,7 @@ class SurenaRobot(gym.Env):
             b=self.torques_high+self.torques_low if TORQUE_CONTROL else (self.thetaDot_high+self.thetaDot_low  if DELTA_THETA else self.theta_high+self.theta_low )
             # action=(np.divide((self.action_space.high-self.action_space.low),2))*action
             action=(np.divide(a,2))*action +(np.divide(b,2))
+
             
         action=action+self.currentPos if DELTA_THETA else action
         if TORQUE_CONTROL:
@@ -508,7 +510,7 @@ class SurenaRobot(gym.Env):
         else:
             self.up=0
 
-        done=(self.observation[2*self.num_actions+1]<0.6) or (self.up>20) #or .... ????  #or (not ZMP_in_SP)
+        done=(self.observation[2*self.num_actions+1]<(0.6-(int(MINDOF)/10))) or (self.up>5) #or .... ????  #or (not ZMP_in_SP)
 
         if not done:
             self.step_counter+=1
@@ -528,15 +530,15 @@ class SurenaRobot(gym.Env):
             stepping_reward,
             min(  max(self.current_feet_pos[0][0],self.current_feet_pos[1][0]) -x   ,0),
             (sum(np.abs(self.observation[2*self.num_actions+5: 2*self.num_actions+9]- self.startOrientation))),
-            min(self.observation[2*self.num_actions+2]-0.12,0   )])
+            min(self.observation[2*self.num_actions+2]-0.12,0)])
 
         # weights=np.array([ +2.1 , 0.0 ,-0.05 ,-0.02, 0 ,0, 0, +0.0, 0.7,-0.7],dtype=np.float32)
-        weights=np.array([ 2.1 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0,0.0, 0.0],dtype=np.float32)
+        weights=np.array([ 2.1 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0],dtype=np.float32)
 
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=sum(reward_array)+1.295 -0.25* self.up#-0.095 #-0.007*float(bool(self.up))
+        reward_s=sum(reward_array)+1.295 -0.75* self.up#-0.095 #-0.007*float(bool(self.up))
         #print("reward:",reward_array)
 
         # if done:
@@ -654,5 +656,3 @@ if __name__=="__main__":
     plt.show()
 
     print("__done__")
-
-
