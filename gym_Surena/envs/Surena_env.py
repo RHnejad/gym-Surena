@@ -5,7 +5,6 @@ model_critic_name="./CHECKPOINTS/modelcriticTestctlC.tar"
 
 import gym
 from gym import spaces
-from matplotlib.pyplot import flag
 import pybullet as p
 import numpy as np
 import time
@@ -14,7 +13,6 @@ import pybullet_data
 FEEDBACK,FEEDBACK2=[],[]
 
 WITH_GUI = 0
-#به نظرم اون ۲۰ های مچ رو کمتر کن
 
 TENDOF=1
 MINDOF=0
@@ -45,9 +43,10 @@ file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urd
 # X0=-0.517
 Z0=0.9727
 foot_z0=0.037999 
-foor_y0_r=0.11380
+foot_y0_r=0.11380
 T=100.
-beta=0.7#7.5
+beta=1.0#7.5
+gain=1.5
 
 if KNEE:
     from kasra.Robot import *
@@ -75,20 +74,20 @@ class SurenaRobot(gym.Env):
         self.thetaDot_high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
         self.thetaDot_low=np.multiply (np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T)            
         
-        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+10,27+10], dtype=np.float32),beta)
-        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-10,-27-10], dtype=np.float32),beta)
+        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+10,27*1.1], dtype=np.float32),beta)
+        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-10,-27*1.1], dtype=np.float32),beta)
         #multiplied to match humanoid_running order and +20 for ankle torques to match better robot versions
 
         self.obs_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
                 315,315,315,315,315,315, 315,315,315,315,315,315,
                 #60,60,40,72,27,27, 60,60,40,72,27,27,
-                10,1.5,3.0,3.0,3.0,
+                10,1.0, 3.0,3.0,3.0, #y z vx vy vz
                 1.0,1.0,1.0,1.0, 5.0,5.0,5.0,
                 250,250], dtype=np.float32)
         self.obs_low=np.array([-1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7,
                 -315,-315,-315,-315,-315,-315, -315,-315,-315,-315,-315,-315,
                 #-60,-60,-40,-72,-27,-27,-60,-60,-40,-72,-27,-27,
-                -10,-1.5,-3.0,-3.0,-3.0,
+                -10,0.0, -3.0,-3.0,-3.0,
                 -1.0,-1.0,-1.0,-1.0, -5.0,-5.0,-5.0,
                 0,0], dtype=np.float32)
 
@@ -156,7 +155,7 @@ class SurenaRobot(gym.Env):
         self.planeId=0
         self.SurenaID=1
         self.zmp=[0,0,0]
-        self.startPos = [0,0,0]
+        self.startPos = [0,0,0] if not MINDOF else [0,0,-0.075]
         self.startOrientation = p.getQuaternionFromEuler([0,0,0])
  
         self.current_feet_pos=[]
@@ -167,6 +166,8 @@ class SurenaRobot(gym.Env):
         self.link_states_feet=None
         self.contacts=None
 
+        self.sum_episode_reward=0
+
         self.reset()
 
 #____step placement___________________________________
@@ -174,12 +175,12 @@ class SurenaRobot(gym.Env):
     #     pass
     #     if right_foot_first :
     #         if self.foot_place_count_right==0:
-    #             next_foor_place_right=0.5*self.dS_right*self.foot_place_count_right+1
+    #             next_foot_place_right=0.5*self.dS_right*self.foot_place_count_right+1
     #     elif self.foot_place_count_left==0:
-    #             next_foor_place_left=0.5*self.dS_left*self.foot_place_count_left+1
+    #             next_foot_place_left=0.5*self.dS_left*self.foot_place_count_left+1
     #     else:        
-    #         next_foor_place_right=self.dS_right*self.foot_place_count_right+1
-    #         next_foor_place_left=self.dS_left*self.foot_place_count_left+1
+    #         next_foot_place_right=self.dS_right*self.foot_place_count_right+1
+    #         next_foot_place_left=self.dS_left*self.foot_place_count_left+1
 
     # def cal_pace_penalty(self,foot):
     #     deltaX=self.current_feet_pos[foot][0]-self.last_feet_floor_x[foot]
@@ -363,6 +364,19 @@ class SurenaRobot(gym.Env):
      
         return max(0,delta_s-0.04)
 
+    def cal_footplacement_rew(self):
+        if MINDOF:
+            return 0
+        r_val=0
+        for foot in range(2):
+            if self.current_feet_pos[foot][2]< 0.05:
+                delta_or=(p.getEulerFromQuaternion(np.abs(np.array(self.link_states_feet[foot][1])))) #-self.startOrientation
+                delta_or=delta_or*np.array([1,1,0.25])
+                r_val+=(sum(delta_or)) #/self.current_feet_pos[foot][2]
+
+        if r_val:r_val=0.00005/(r_val)
+        return r_val
+              
 #_____________________
     def cal_ZMP(self,R_z):
         ZMP=np.zeros((2,2))
@@ -391,7 +405,7 @@ class SurenaRobot(gym.Env):
         # print(x_zmp,y_zmp)
 
         return [x_zmp,y_zmp,0.0]
-#____________________________________________________________________________________________
+#obss____________________________________________________________________________________________
 
     def cal_observations(self): 
         Ts_raw=np.zeros(self.num_actions)
@@ -401,12 +415,25 @@ class SurenaRobot(gym.Env):
         self.JointStates=p.getJointStates(self.SurenaID,self.jointIDs) ##JPos,JVel,JF
         self.contacts=p.getContactPoints(self.SurenaID,self.planeId)
 
-        # ZMP_in_SP=self.process_ZMP(self.contacts)
-        # ZMP_in_SP=True
-
-        iscontact=bool(len(self.contacts))
+        iscontact=True
 
         FzR,FzL=0.0,0.0
+        iscontact=bool(len(self.contacts))
+
+        rc,lc=0,0
+        ncontact=len(self.contacts)
+        for k in range(ncontact):
+            if self.contacts[k][3]==(5 if not MINDOF else 3):
+                FzR+=self.contacts[k][9]
+                lc+=1
+                
+            elif self.contacts[k][3]==(11 if not MINDOF else 7):
+                FzL+=self.contacts[k][9]
+                rc+=1
+                
+        # print(FzR,FzL)
+        # ZMP_in_SP=self.process_ZMP(self.contacts)
+        # ZMP_in_SP=True
         if not MINDOF:
             self.link_states_feet=p.getLinkStates(self.SurenaID,[5,11,4,10]) 
             self.current_feet_pos=[list(self.link_states_feet[0][0]),list(self.link_states_feet[1][0])]
@@ -416,21 +443,9 @@ class SurenaRobot(gym.Env):
                 iscontact=False
             elif z_l5<=foot_z0 or z_l11<=foot_z0: #double checks and if iscontact was decided as False but in fact ther is contact, corrects it
                 iscontact=True
-       
-            rc,lc=0,0
-            ncontact=len(self.contacts)
-            for k in range(ncontact):
-                if self.contacts[k][3]==5:
-                    FzR+=self.contacts[k][9]
-                    lc+=1
-                    
-                elif self.contacts[k][3]==11:
-                    FzL+=self.contacts[k][9]
-                    rc+=1
-
-            self.zmp=self.cal_ZMP([FzR,FzL])
+                self.zmp=self.cal_ZMP([FzR,FzL])
             
-            FEEDBACK.append(list(self.zmp[:2]))
+            # FEEDBACK.append(list(self.zmp[:2]))
             temp=self.cal_ZMP_cast()
             # FEEDBACK2.append(list(self.cal_ZMP_cast))
 
@@ -439,6 +454,7 @@ class SurenaRobot(gym.Env):
             elif lc==4:
                 self.last_feet_floor_x[1]=self.link_states_feet[1][0][0]
 
+        #________________________________
         for jj in range(self.num_actions):
             Ts_raw[jj]=self.JointStates[jj][3]
             Theta_dots[jj]=self.JointStates[jj][1]
@@ -483,7 +499,7 @@ class SurenaRobot(gym.Env):
             
         action=action+self.currentPos if DELTA_THETA else action
         if TORQUE_CONTROL:
-            # action*=20
+            action*=gain
             p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
                             jointIndices=self.jointIDs,
                             controlMode=p.TORQUE_CONTROL,
@@ -510,11 +526,12 @@ class SurenaRobot(gym.Env):
         else:
             self.up=0
 
-        done=(self.observation[2*self.num_actions+1]<(0.6-(int(MINDOF)/10))) or (self.up>5) #or .... ????  #or (not ZMP_in_SP)
+        
+        done=(self.observation[2*self.num_actions+1]<(0.6)) #or (self.up>20) #or .... ????  #or (not ZMP_in_SP)
+        if MINDOF: done = done or (self.observation[2*self.num_actions+1]>(0.9))
 
-        if not done:
-            self.step_counter+=1
-            
+        if not done: self.step_counter+=1
+                      
         sum_thetaDot=sum((self.observation[self.num_actions:2*self.num_actions])**2)
         sum_orn=sum(np.abs(self.startOrientation-self.observation[2*self.num_actions+5: 2*self.num_actions+9]))
         stepping_reward=self.cal_stepping_reward(self.observation[-2:])
@@ -530,15 +547,16 @@ class SurenaRobot(gym.Env):
             stepping_reward,
             min(  max(self.current_feet_pos[0][0],self.current_feet_pos[1][0]) -x   ,0),
             (sum(np.abs(self.observation[2*self.num_actions+5: 2*self.num_actions+9]- self.startOrientation))),
-            min(self.observation[2*self.num_actions+2]-0.12,0)])
+            min(self.observation[2*self.num_actions+2]-0.12,0),
+            self.cal_footplacement_rew()])
 
-        # weights=np.array([ +2.1 , 0.0 ,-0.05 ,-0.02, 0 ,0, 0, +0.0, 0.7,-0.7],dtype=np.float32)
-        weights=np.array([ 2.1 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0],dtype=np.float32)
+        weights=np.array([ 2.1 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0, 0.5],dtype=np.float32)
 
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=sum(reward_array)+1.295 -0.75* self.up#-0.095 #-0.007*float(bool(self.up))
+        reward_s=sum(reward_array)+2.295 -0.75* self.up#-0.095 #-0.007*float(bool(self.up))
+        self.sum_episode_reward+=reward_s
         #print("reward:",reward_array)
 
         # if done:
@@ -587,7 +605,7 @@ class SurenaRobot(gym.Env):
         self.step_counter=0
         p.resetSimulation()
         self.planeId = p.loadURDF("plane.urdf") #ID:0
-        self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation) 
+        self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation,useFixedBase=False) 
         p.enableJointForceTorqueSensor(self.SurenaID,5)
         p.enableJointForceTorqueSensor(self.SurenaID,11)
         p.setGravity(0,0,-9.81)
@@ -596,8 +614,8 @@ class SurenaRobot(gym.Env):
         if KNEE:
             self.bend_knee()
 
-        p.stepSimulation()
-        self.current_feet_pos=[[0.0054999,foor_y0_r,foot_z0],[0.0054999,-1*foor_y0_r,foot_z0]]
+        # p.stepSimulation()
+        self.current_feet_pos=[[0.0054999,foot_y0_r,foot_z0],[0.0054999,-1*foot_y0_r,foot_z0]]
         self.last_feet_floor_x=[0.0054999,0.0054999]
         self.pace_cout=[0,0]
         
@@ -610,7 +628,6 @@ class SurenaRobot(gym.Env):
             for j in self.jointIDs:
                 if p.getJointInfo(self.SurenaID, j)[2] == p.JOINT_REVOLUTE: 
                     p.setJointMotorControl2(self.SurenaID, j, controlMode=p.VELOCITY_CONTROL, force=0)
-        
         
         return self.observation
 
@@ -625,26 +642,27 @@ class SurenaRobot(gym.Env):
 
 
 if __name__=="__main__":
-    import json
+    # import json
 
-    with open('classic+rl/data.txt') as json_file:
-        data = json.load(json_file)
-        for pr in data['people']:
-            Torqs=np.reshape(np.array(pr['Torques']),(-1,12))
-            ac2=np.reshape(np.array(pr["ttheta"]),(-1,12))
-            
+    # with open('classic+rl/data.txt') as json_file:
+    #     data = json.load(json_file)
+    #     for pr in data['people']:
+    #         Torqs=np.reshape(np.array(pr['Torques']),(-1,12))
+    #         ac2=np.reshape(np.array(pr["ttheta"]),(-1,12))         
 
     S=SurenaRobot("gui")
-    for i in range(2160): #25920
-        #S.step(Torqs[i])
-        # S.step([0.5]*10)
-        S.step(ac2[i])
 
-    fb=np.reshape(np.array(FEEDBACK),(-1,2))
-    fb2=fb.T
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(fb2[0],fb2[1],"*")
+    for i in range(216000): #25920
+        time.sleep(0.5)
+    #     #S.step(Torqs[i])
+        S.step([0.005]*10)
+    #     S.step(ac2[i])
+
+    # fb=np.reshape(np.array(FEEDBACK),(-1,2))
+    # fb2=fb.T
+    # import matplotlib.pyplot as plt
+    # plt.figure()
+    # plt.plot(fb2[0],fb2[1],"*")
 
     #plt.figure()
     # plt.plot(np.reshape(np.array(FEEDBACK,dtype=np.float32),(-1,12)))
@@ -653,6 +671,6 @@ if __name__=="__main__":
     # plt.figure()
     # plt.plot(Torqs)
     # plt.legend(list(range(12)))
-    plt.show()
+    # plt.show()
 
     print("__done__")
