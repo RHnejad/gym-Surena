@@ -1,8 +1,3 @@
-num_steps=1024
-model_actor_mean_name="./CHECKPOINTS/modelactorTestctlC.tar"
-model_critic_name="./CHECKPOINTS/modelcriticTestctlC.tar"
-
-
 import gym
 from gym import spaces
 import pybullet as p
@@ -27,26 +22,22 @@ KNEE=0
 NORMALIZE=1#observation
 
 ACTIVATE_SLEEP,A_S_AFTER = 0,None
-
 if not WITH_GUI:
     ACTIVATE_SLEEP=False
 if MINDOF:
     TENDOF=0
 
-#"SURENA/sfixedWLess.urdf"
-#"SURENA/sfixedWless6dof.urdf"
 
-#file_name="/content/gym-Surena/gym_Surena/envs/SURENA/sfixed.urdf"#google_colab_!git clone https://github.com/RHnejad/gym-Surena.git
-file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
-#file_name="SURENA/sfixed.urdf" if TENDOF else "SURENA/sfixed12.urdf" 
+# file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
+file_name="SURENA/colorsfixedlimWLes.urdf"
   
 # X0=-0.517
 Z0=0.9727
 foot_z0=0.037999 
 foot_y0_r=0.11380
 T=100.
-beta=1.0#7.5
-gain=1.5
+beta=1.#7.5
+gain=1.
 
 if KNEE:
     from kasra.Robot import *
@@ -58,11 +49,17 @@ class SurenaRobot(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self,gui=""):
+    def __init__(self,gui="",frequency=0):
         super(SurenaRobot, self).__init__()
         if gui=="gui" : 
             global WITH_GUI
             WITH_GUI=1
+        if frequency>0:
+            global T
+            T=frequency
+
+        print(frequency)
+        print(T)
 
         self.num_actions= (10 if TENDOF else 12) if not MINDOF else 6
         self.observation_dimensions= 2*self.num_actions+14 
@@ -369,7 +366,7 @@ class SurenaRobot(gym.Env):
             return 0
         r_val=0
         for foot in range(2):
-            if self.current_feet_pos[foot][2]< 0.05:
+            if self.current_feet_pos[foot][2]< 0.05 and self.current_feet_pos[foot][2]> foot_z0:
                 delta_or=(p.getEulerFromQuaternion(np.abs(np.array(self.link_states_feet[foot][1])))) #-self.startOrientation
                 delta_or=delta_or*np.array([1,1,0.25])
                 r_val+=(sum(delta_or)) #/self.current_feet_pos[foot][2]
@@ -489,6 +486,8 @@ class SurenaRobot(gym.Env):
     def step(self, action):
         if ACTIVATE_SLEEP:
             time.sleep(1./T)
+        
+        # print("raw",action)
 
         if ACTIVATION:
             a=self.torques_high-self.torques_low if TORQUE_CONTROL else (self.thetaDot_high-self.thetaDot_low  if DELTA_THETA else self.theta_high-self.theta_low)
@@ -500,6 +499,7 @@ class SurenaRobot(gym.Env):
         action=action+self.currentPos if DELTA_THETA else action
         if TORQUE_CONTROL:
             action*=gain
+            # print(action)
             p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
                             jointIndices=self.jointIDs,
                             controlMode=p.TORQUE_CONTROL,
@@ -550,12 +550,13 @@ class SurenaRobot(gym.Env):
             min(self.observation[2*self.num_actions+2]-0.12,0),
             self.cal_footplacement_rew()])
 
-        weights=np.array([ 2.1 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0, 0.5],dtype=np.float32)
+        # weights=np.array([ 2.3 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0, 0.5],dtype=np.float32)
+        weights=np.array([ 0.76 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0., 0.0, 0.],dtype=np.float32)
 
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=sum(reward_array)+2.295 -0.75* self.up#-0.095 #-0.007*float(bool(self.up))
+        reward_s=sum(reward_array)+0.31 #-0.75* self.up#-0.095 #-0.007*float(bool(self.up))
         self.sum_episode_reward+=reward_s
         #print("reward:",reward_array)
 
