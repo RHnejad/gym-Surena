@@ -18,6 +18,8 @@ TORQUE_CONTROL=1
 ACTIVATION= 1#action
 #نکته: بدون اکتیویشن در حالت تورک کنترل نیازه که یه ضریبی رو اضافه کنی که تو اکشن است\ ضرب کنه چون خیلی حروجی های کمی میده
 KNEE=0
+IMITATE=0
+if IMITATE : KNEE = True
 
 NORMALIZE=1#observation
 
@@ -27,17 +29,19 @@ if not WITH_GUI:
 if MINDOF:
     TENDOF=0
 
-
 # file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
-file_name="SURENA/colorsfixedlimWLes.urdf"
+# file_name="SURENA/colorsfixedlimWLes.urdf"
+# file_name="SURENA/newFootSfixedlim.urdf"
+file_name="SURENA/sfixedlim.urdf"
   
-# X0=-0.517
+# X0=-0.0517
 Z0=0.9727
 foot_z0=0.037999 
 foot_y0_r=0.11380
-T=100.
-beta=1.#7.5
+T=200.
+beta=1.5
 gain=1.
+num_steps=512
 
 if KNEE:
     from kasra.Robot import *
@@ -51,15 +55,18 @@ class SurenaRobot(gym.Env):
 
     def __init__(self,gui="",frequency=0):
         super(SurenaRobot, self).__init__()
-        if gui=="gui" : 
-            global WITH_GUI
-            WITH_GUI=1
-        if frequency>0:
-            global T
-            T=frequency
 
-        print(frequency)
-        print(T)
+        try:
+            global WITH_GUI
+            if frequency>0:
+                global T
+                T=frequency
+            if gui=="gui":       
+                WITH_GUI=1
+            elif gui==1:
+                WITH_GUI=1
+    
+        except: print("warning!")
 
         self.num_actions= (10 if TENDOF else 12) if not MINDOF else 6
         self.observation_dimensions= 2*self.num_actions+14 
@@ -71,8 +78,8 @@ class SurenaRobot(gym.Env):
         self.thetaDot_high=np.multiply (np.array([0.0131,0.0131,0.0199,0.0314,0.0262,0.0262 ,0.0131,0.0131,0.0199,0.0314,0.0262,0.0262], dtype=np.float32),200./T)
         self.thetaDot_low=np.multiply (np.array([-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262 ,-0.0131,-0.0131,-0.0199,-0.0314,-0.0262,-0.0262], dtype=np.float32),200./T)            
         
-        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27+10,27*1.1], dtype=np.float32),beta)
-        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27-10,-27*1.1], dtype=np.float32),beta)
+        self.torques_high=np.multiply(np.array([60,60,40,72,27,27, 60,60,40,72,27*1.5,27*1.5], dtype=np.float32),beta)
+        self.torques_low=np.multiply(np.array([-60,-60,-40,-72,-27,-27, -60,-60,-40,-72,-27*1.5,-27*1.5], dtype=np.float32),beta)
         #multiplied to match humanoid_running order and +20 for ankle torques to match better robot versions
 
         self.obs_high=np.array([0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4,
@@ -167,27 +174,18 @@ class SurenaRobot(gym.Env):
 
         self.reset()
 
-#____step placement___________________________________
-    # def create_step_plcament(self):
-    #     pass
-    #     if right_foot_first :
-    #         if self.foot_place_count_right==0:
-    #             next_foot_place_right=0.5*self.dS_right*self.foot_place_count_right+1
-    #     elif self.foot_place_count_left==0:
-    #             next_foot_place_left=0.5*self.dS_left*self.foot_place_count_left+1
-    #     else:        
-    #         next_foot_place_right=self.dS_right*self.foot_place_count_right+1
-    #         next_foot_place_left=self.dS_left*self.foot_place_count_left+1
+        if IMITATE:
+            import json
+            with open('classic200.txt') as json_file:
+                data = json.load(json_file)
+                for pr in data['robot']:
+                    self.des_com=np.reshape(np.array(pr['come']),(-1,3))
+                    self.des_right=np.reshape(np.array(pr['right']),(-1,3))
+                    self.des_left=np.reshape(np.array(pr['left']),(-1,3))
+                    self.des_theta=np.reshape(np.array(pr['theta']),(-1,12))
+                if TENDOF: self.des_theta=np.delete(self.des_theta,[0,6])
 
-    # def cal_pace_penalty(self,foot):
-    #     deltaX=self.current_feet_pos[foot][0]-self.last_feet_floor_x[foot]
-    #     if deltaX<0:
-    #         return 0 #CHECK, CHANGE I DON'T KNOW !!!!
-    #     if ?
-    #     theta_limit=np.arcsin(np.sqrt((self.paces[foot]-deltaX)/self.paces[foot]))
-    #     theta_current=np.arctan()
 
-    #     pass
 
 #____cast________________________________________________________________________________________
     #from_CAST
@@ -482,6 +480,43 @@ class SurenaRobot(gym.Env):
         return iscontact, powers, x#, ZMP_in_SP
 
     #________________________________________
+    def cal_reward(self,powers,x):
+        sum_thetaDot=sum((self.observation[self.num_actions:2*self.num_actions])**2)
+        sum_orn=sum(np.abs(self.startOrientation-self.observation[2*self.num_actions+5: 2*self.num_actions+9]))
+        stepping_reward=self.cal_stepping_reward(self.observation[-2:])
+        imitation_reward=0
+        if IMITATE:
+            imitation_reward=np.power((self.observation[0:self.num_actions]-self.des_theta),2)
+            imitation_reward=np.sum(imitation_reward)
+            imitation_reward=np.exp(-1*imitation_reward) #chenge -1 another negative num. if necessary
+
+
+        #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz 7.SigmathethatDot^2 8.SigmaabsdeltaOrn]
+        param=np.array([x, 
+            powers, 
+            max(0,  np.exp( np.abs(self.observation[2*self.num_actions])-0.130)  -1.), 
+            max(0,  np.exp( np.abs(self.observation[2*self.num_actions+1]-Z0)-0.03)  -1.), 
+            (self.step_counter/num_steps),
+            sum_thetaDot,
+            sum_orn,
+            stepping_reward,
+            min(  max(self.current_feet_pos[0][0],self.current_feet_pos[1][0]) -x   ,0),
+            min(self.observation[2*self.num_actions+2]-0.12,0), # v_x
+            self.cal_footplacement_rew(),
+            imitation_reward])
+
+        # weights=np.array([ 2.3 , 0.0 ,-0.3 ,0.0, 0 ,0, -1.7, +0.0, 0.0,  0.0, 0.08, 0.7],dtype=np.float32)
+        weights=np.array([ 2.5, 0.0 ,0 ,0.0, 0 ,0, -0.05, +0.0, 0.0,  0.0, 0.7, 0.9],dtype=np.float32)
+
+        #heree
+        reward_array=param*weights
+        reward_s=sum(reward_array)+0.65 #-0.75* self.up#-0.095 #-0.007*float(bool(self.up))
+        reward_s=reward_s/4   
+        # print(reward_array)
+        return reward_s    
+
+
+    #________________________________________
 
     def step(self, action):
         if ACTIVATE_SLEEP:
@@ -525,51 +560,21 @@ class SurenaRobot(gym.Env):
             self.up+=1
         else:
             self.up=0
-
-        
+    
         done=(self.observation[2*self.num_actions+1]<(0.6)) #or (self.up>20) #or .... ????  #or (not ZMP_in_SP)
         if MINDOF: done = done or (self.observation[2*self.num_actions+1]>(0.9))
 
-        if not done: self.step_counter+=1
-                      
-        sum_thetaDot=sum((self.observation[self.num_actions:2*self.num_actions])**2)
-        sum_orn=sum(np.abs(self.startOrientation-self.observation[2*self.num_actions+5: 2*self.num_actions+9]))
-        stepping_reward=self.cal_stepping_reward(self.observation[-2:])
+        reward=self.cal_reward(powers,x)
 
-        #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz 7.SigmathethatDot^2 8.SigmaabsdeltaOrn]
-        param=np.array([x,#+observation[2*self.num_actions+2]/10,
-            powers, 
-            max(0,  np.exp( np.abs(self.observation[2*self.num_actions])-0.130)  -1.), 
-            max(0,  np.exp( np.abs(self.observation[2*self.num_actions+1]-Z0)-0.03)  -1.), 
-            (self.step_counter/num_steps),
-            sum_thetaDot,
-            sum_orn,
-            stepping_reward,
-            min(  max(self.current_feet_pos[0][0],self.current_feet_pos[1][0]) -x   ,0),
-            (sum(np.abs(self.observation[2*self.num_actions+5: 2*self.num_actions+9]- self.startOrientation))),
-            min(self.observation[2*self.num_actions+2]-0.12,0),
-            self.cal_footplacement_rew()])
-
-        # weights=np.array([ 2.3 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0.7, 0.0, 0.5],dtype=np.float32)
-        weights=np.array([ 0.76 , 0.0 ,-0.0 ,0.0, 0 ,0, 0, +0.0, 0.0, -0., 0.0, 0.],dtype=np.float32)
-
-        #heree
-        reward_array=param*weights
-        # print(reward_array)
-        reward_s=sum(reward_array)+0.31 #-0.75* self.up#-0.095 #-0.007*float(bool(self.up))
-        self.sum_episode_reward+=reward_s
-        #print("reward:",reward_array)
-
-        # if done:
-        #     print(self.step_counter)
-
+        if not done: self.step_counter+=1                
+        # if done: print(self.step_counter)
         self.first_step=False
 
         if NORMALIZE:
             temp=self.obs_high-self.obs_low
             self.observation=self.observation/temp
             
-        return self.observation, reward_s, done, {}
+        return self.observation, reward, done, {}
 
     #________________________________________
 
@@ -642,6 +647,10 @@ class SurenaRobot(gym.Env):
 
 
 
+
+
+
+
 if __name__=="__main__":
     # import json
 
@@ -654,9 +663,9 @@ if __name__=="__main__":
     S=SurenaRobot("gui")
 
     for i in range(216000): #25920
-        time.sleep(0.5)
+        time.sleep(1/T)
     #     #S.step(Torqs[i])
-        S.step([0.005]*10)
+        S.step([0]*12)
     #     S.step(ac2[i])
 
     # fb=np.reshape(np.array(FEEDBACK),(-1,2))
@@ -675,3 +684,28 @@ if __name__=="__main__":
     # plt.show()
 
     print("__done__")
+
+
+
+
+#____step placement___________________________________
+    # def create_step_plcament(self):
+    #     pass
+    #     if right_foot_first :
+    #         if self.foot_place_count_right==0:
+    #             next_foot_place_right=0.5*self.dS_right*self.foot_place_count_right+1
+    #     elif self.foot_place_count_left==0:
+    #             next_foot_place_left=0.5*self.dS_left*self.foot_place_count_left+1
+    #     else:        
+    #         next_foot_place_right=self.dS_right*self.foot_place_count_right+1
+    #         next_foot_place_left=self.dS_left*self.foot_place_count_left+1
+
+    # def cal_pace_penalty(self,foot):
+    #     deltaX=self.current_feet_pos[foot][0]-self.last_feet_floor_x[foot]
+    #     if deltaX<0:
+    #         return 0 #CHECK, CHANGE I DON'T KNOW !!!!
+    #     if ?
+    #     theta_limit=np.arcsin(np.sqrt((self.paces[foot]-deltaX)/self.paces[foot]))
+    #     theta_current=np.arctan()
+
+    #     pass
