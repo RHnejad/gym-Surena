@@ -1,6 +1,6 @@
 
-file_name="SURENA/sfixedlim.urdf"
-file_name="SURENA/newFootSfixedlim.urdf"
+file_name="SURENA/sfixedWLessLim.urdf"
+# file_name="SURENA/newFootSfixedlim.urdf"
 
 import pybullet as p
 import pybullet_data
@@ -26,7 +26,6 @@ com_sensor_bias=np.array([+0.0517,0.0,-0.94428+0.7],dtype=np.float32) #-0.9727
 right_ankle_sensor_bias=np.array([+0.029,+0.1167-0.115,-0.167],dtype=np.float32)
 left_ankle_sensor_bias=np.array([+0.029,-0.1167+0.115,-0.167],dtype=np.float32)
 
-
 deltaS=0.5    
 X0=-0.0517
 Z0=0.9727
@@ -34,7 +33,10 @@ Z0_2=0.7
 foot_z0=0.037999 
 foor_y0_r=0.11380
 T=200.
-beta=10*200./T
+beta=5*200./T
+
+PLOT_REWS=1
+N_plot=10000
 
 if KNEE: from DCM import *
 # global x
@@ -52,8 +54,11 @@ class SurenaRobot_v1(gym.Env):
             global WITH_GUI
             WITH_GUI=1
 
+        if PLOT_REWS: self.mean_reward_array=np.zeros((N_plot,8))
+        self.episode_num=0 #zero base
+
         self.num_actions= (4 if MIN else 5) if not ONLY_COM else 2
-        self.observation_dimensions= self.num_actions+5
+        self.observation_dimensions= self.num_actions+5+12
 
         #DeltaX_com,DeltaY_com,DeltaX_anke,(DeltaY_ankle),DeltaZ_ankle
         if ONLY_COM:
@@ -66,8 +71,10 @@ class SurenaRobot_v1(gym.Env):
         self.action_max=np.multiply(self.action_max,beta)
         
         self.observation_space = gym.spaces.box.Box(
-                low=np.concatenate((self.action_min,[-0.1,-0.5,-0.5,  0,0])),
-                high=np.concatenate((self.action_max,[5,0.5,0.9727, 250,250])))
+                low=np.concatenate((self.action_min,[-0.1,-0.5,-0.5,  0,0, 
+                                                    -1.0, -0.5,-1.0,0.0,-1.0,-0.7,  -0.4,-0.1,-1.0,0.0,-1.0,-0.7])),
+                high=np.concatenate((self.action_max,[5,0.5,0.9727, 250,250,
+                                                    0.4,0.1,1.2,2.0,1.3,0.7,   1.0,0.5,1.2,2.0 ,1.3,0.4 ])))
 
         #[com_x,com_y,ankle_x,ankle_y,(DS,R,L)]
         self.action_space=gym.spaces.box.Box(
@@ -101,14 +108,16 @@ class SurenaRobot_v1(gym.Env):
         self.zmp=[0,0,0]
 
         self.step_counter=0
+
         if IMITATE:
             import json
-            with open('trajectories.txt') as json_file:
+            with open('classic200.txt') as json_file:
                 data = json.load(json_file)
-                for pr in data['people']:
+                for pr in data['robot']:
                     self.des_com=np.reshape(np.array(pr['come']),(-1,3))
                     self.des_right=np.reshape(np.array(pr['right']),(-1,3))
                     self.des_left=np.reshape(np.array(pr['left']),(-1,3))
+                    self.des_theta=np.reshape(np.array(pr['theta']),(-1,12))
 
 #____________________________________________________________________________________________
     def cal_power(self):
@@ -160,15 +169,17 @@ class SurenaRobot_v1(gym.Env):
 
         if self.FzR-tempR<0 and self.feet_state==False:#right
             self.foot_step_count+=1
+            # print("R",self.foot_step_count)
         elif self.FzL-tempL<0 and self.feet_state==True: #left
             self.foot_step_count+=1
+            # print("L",self.foot_step_count)
         else:
             self.foot_step_count=0
 
-        if self.foot_step_count>5:
-            print("*",self.feet_state)
+        if self.foot_step_count>1:
+            # print("*",self.feet_state)
             self.feet_state=(not self.feet_state) #switch
-            print("^",self.feet_state)
+            # print("^",self.feet_state)
         
         self.FzR,self.FzL=tempR,tempL
         self.zmp=self.cal_ZMP()
@@ -182,19 +193,6 @@ class SurenaRobot_v1(gym.Env):
         target_com=np.array([action[0]+self.com[0],action[1]+self.com[1],Z0_2])
         target_com[:2]+=com_sensor_bias[:2]
        
-        #theory!
-        #feet_state=np.abs(self.right_ankle[1]-self.com[1]) > np.abs(self.left_ankle[1]-self.com[1]) #0:right 1:left on the floor
-        # self.feet_state=False
-        #_______
-        # if self.first_step:
-        #     self.first_step=False
-        #     while np.abs(self.observations[self.num_actions+1])<0.1166:
-        #         temp=self.action_space.high[1] if feet_state else self.action_space.low[1]
-        #         temp_ac=np.zeros(self.num_actions)
-        #         temp_ac[1]=temp
-        #         self.step(temp_ac)
-        #______
-
         if self.feet_state and (not ONLY_COM): #left foot on the ground
             self.right=np.array([action[2]+self.right_ankle[0],self.right_ankle[1],action[3]+self.right_ankle[2]]) 
             self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.0]) 
@@ -216,17 +214,62 @@ class SurenaRobot_v1(gym.Env):
         SPos, SOrn = p.getBasePositionAndOrientation(self.SurenaID)
         LinearVel,AngularVel=p.getBaseVelocity(self.SurenaID)  
         ankle_states=p.getLinkStates(self.SurenaID,[4,10])
+
         self.right_ankle,self.left_ankle=np.array(ankle_states[0][0]),np.array(ankle_states[1][0])
         self.com=SPos[0:2]
+        
+        #***
+        # print(self.observation_dimensions,"&&&&")
+        JointStates=p.getJointStates(self.SurenaID,self.jointIDs) ##JPos,JVel,JF
+        for ii in range(12):
+            # print(ii)
+            self.observations[ii+self.num_actions+5]=JointStates[ii][0] #theta
 
         self.observations[0:self.num_actions]=action
         self.observations[self.num_actions:self.num_actions+3]=SPos
 
         self.feet_forces()
-        self.observations[-2:]=[self.FzR,self.FzL]
+        self.observations[self.observation_dimensions-14:self.observation_dimensions-12]=[self.FzR,self.FzL]
 
         return SPos,LinearVel
 
+    #_______________________________________________-
+    def cal_rewards(self,com_trj, SPos, LinearVel):
+
+        imitation_reward_theta=0
+        # if IMITATE:
+        #     imitation_reward_theta=np.power((self.observation[0:self.num_actions]-self.des_theta[self.step_counter%1800]),2)
+        #     imitation_reward_theta=np.sum(imitation_reward_theta)
+        #     imitation_reward_theta=np.exp(-1*imitation_reward_theta) #chenge -1 another negative num. if necessary
+
+        imitation_reward=0
+        if IMITATE:
+            imitation_reward=np.power((com_trj[1]-self.des_com[self.step_counter%1800][1]),2)
+            imitation_reward+=np.power((self.right[2]-self.des_right[self.step_counter%1800][2]),2)
+            imitation_reward+=np.power((self.left[2]-self.des_left[self.step_counter%1800][2]),2)
+            # imitation_reward=np.sum(imitation_reward)
+            imitation_reward=np.exp(-2*(imitation_reward))
+            # print(imitation_reward)
+
+        param=np.array([LinearVel[0], #x_dot
+        self.cal_power(), 
+        max(0, np.exp(np.abs(SPos[1]-0.115))-1 ), #exp(delta_y-acceptable_delta_y)
+        max(0,np.exp(np.abs(SPos[2]-Z0)-0.03)-1), 
+        (self.step_counter/1000),
+        SPos[0], #x
+        self.left_ankle[0],
+        imitation_reward])
+
+        weights=np.array([ +.09 , -0.00000 ,-0.0 ,-0.0, 0. , 2.5 ,0.0 ,2.])  
+        #heree
+        reward_array=param*weights
+        # print(reward_array)
+        reward_s=(sum(reward_array))+1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=reward_s/2
+
+        if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
+        
+        return reward_s
     #________________________________________
     def step(self, action):
         com_trj=self.cal_trajectories(action)
@@ -238,31 +281,25 @@ class SurenaRobot_v1(gym.Env):
                                         targetPositions = All)  #forces=np.full((self.num_actions,),600)
         p.stepSimulation()
         if ACTIVATE_SLEEP: time.sleep(1/T)
+        # print(com_trj)
 
 
         SPos,LinearVel=self.cal_observations(action)
 
-        done=float(bool(SPos[2]<0.5))  or self.up>10 #or ( self.observations[-1:]>0 and self.left_ankle[0]>=0.2) #SPos[2]<0.5 or SPos[0]>2. or self.up>1 or 
-        
-        param=np.array([LinearVel[0], #x_dot
-            self.cal_power(), 
-            max(0, np.exp(np.abs(SPos[1]-0.115))-1 ), #exp(delta_y-acceptable_delta_y)
-            max(0,np.exp(np.abs(SPos[2]-Z0)-0.03)-1), 
-            (self.step_counter/1000),
-            SPos[0], #x
-            self.left_ankle[0]])
+        done=((SPos[2]<0.5))  or self.up>50 #or ( self.observations[-1:]>0 and self.left_ankle[0]>=0.2) #SPos[2]<0.5 or SPos[0]>2. or self.up>1 or 
+        # print(SPos[2])
+        reward=self.cal_rewards(com_trj, SPos, LinearVel)
 
-        weights=np.array([ +1.0 , -0.00000 ,-0.0 ,-0.0, 0. , 0.015 ,0.0]) #=np.array([ +0.0 , -0.00000 ,-0.1 ,-0.0, 0. , 0.3 ,0.7]) 
-        #heree
-        reward_array=param*weights
-        reward_s=(sum(reward_array))+0.25#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
-        
-        if IMITATE:
-            reward_s=reward_s-np.sum(np.abs(self.des_com[self.step_counter]-com_trj))
-            reward_s= reward_s - np.sum(np.abs(self.des_right[self.step_counter]-self.right))
-            reward_s= reward_s - np.sum(np.abs(self.des_left[self.step_counter]-self.left))
-            # reward_s=reward_s/2
-        # print(reward_s)
+        if not done: self.step_counter+=1   
+        elif PLOT_REWS : 
+            self.mean_reward_array[self.episode_num%N_plot]= np.divide(self.mean_reward_array[self.episode_num%N_plot],self.step_counter+1)
+            self.episode_num+=1  
+        if done and self.episode_num%N_plot==0 and self.episode_num>0 and PLOT_REWS:
+            print(self.episode_num)
+            fig=plt.figure()
+            plt.plot(self.mean_reward_array)
+            plt.show()
+            plt.close()
 
         # global com_for_plot
         # com_for_plot[0].append(action[0])
@@ -276,7 +313,7 @@ class SurenaRobot_v1(gym.Env):
         self.first_step=False
         self.step_counter+=1
 
-        return self.observations, reward_s, done, {}
+        return self.observations, reward, done, {}
 
     #________________________________________
 
