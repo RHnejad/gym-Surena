@@ -18,7 +18,7 @@ TORQUE_CONTROL=1
 ACTIVATION= 1#action
 #نکته: بدون اکتیویشن در حالت تورک کنترل نیازه که یه ضریبی رو اضافه کنی که تو اکشن است\ ضرب کنه چون خیلی حروجی های کمی میده
 KNEE=0
-IMITATE=0
+IMITATE=1
 if IMITATE : KNEE = True
 
 NORMALIZE=1#observation
@@ -28,6 +28,9 @@ if not WITH_GUI:
     ACTIVATE_SLEEP=False
 if MINDOF:
     TENDOF=0
+
+PLOT_REWS=1
+N_plot=10
 
 # file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
 # file_name="SURENA/colorsfixedlimWLes.urdf"
@@ -43,6 +46,7 @@ beta=1.5
 gain=1.
 num_steps=512
 
+
 if KNEE:
     from kasra.Robot import *
     from kasra.DCM import *
@@ -55,6 +59,9 @@ class SurenaRobot(gym.Env):
 
     def __init__(self,gui="",frequency=0):
         super(SurenaRobot, self).__init__()
+
+        if PLOT_REWS :self.mean_reward_array=np.zeros((N_plot,12))
+        self.episode_num=0 #zero base
 
         try:
             global WITH_GUI
@@ -183,7 +190,9 @@ class SurenaRobot(gym.Env):
                     self.des_right=np.reshape(np.array(pr['right']),(-1,3))
                     self.des_left=np.reshape(np.array(pr['left']),(-1,3))
                     self.des_theta=np.reshape(np.array(pr['theta']),(-1,12))
-                if TENDOF: self.des_theta=np.delete(self.des_theta,[0,6])
+                
+                if TENDOF: 
+                    self.des_theta=np.delete(self.des_theta,[0,6],1)
 
 
 
@@ -486,7 +495,7 @@ class SurenaRobot(gym.Env):
         stepping_reward=self.cal_stepping_reward(self.observation[-2:])
         imitation_reward=0
         if IMITATE:
-            imitation_reward=np.power((self.observation[0:self.num_actions]-self.des_theta),2)
+            imitation_reward=np.power((self.observation[0:self.num_actions]-self.des_theta[self.step_counter%1800]),2)
             imitation_reward=np.sum(imitation_reward)
             imitation_reward=np.exp(-1*imitation_reward) #chenge -1 another negative num. if necessary
 
@@ -513,7 +522,10 @@ class SurenaRobot(gym.Env):
         reward_s=sum(reward_array)+0.65 #-0.75* self.up#-0.095 #-0.007*float(bool(self.up))
         reward_s=reward_s/4   
         # print(reward_array)
-        return reward_s    
+
+        if PLOT_REWS : self.mean_reward_array[self.episode_num%N_plot]+=param
+
+        return reward_s
 
 
     #________________________________________
@@ -566,7 +578,19 @@ class SurenaRobot(gym.Env):
 
         reward=self.cal_reward(powers,x)
 
-        if not done: self.step_counter+=1                
+        print(self.mean_reward_array)
+        
+        if not done: self.step_counter+=1   
+        elif PLOT_REWS : 
+            self.mean_reward_array[self.episode_num%N_plot]= np.divide(self.mean_reward_array[self.episode_num%N_plot],self.step_counter+1)
+            self.episode_num+=1  
+        if done and  self.episode_num%N_plot==0 and self.episode_num>0 and PLOT_REWS :
+            fig=plt.figure()
+            plt.plot(self.mean_reward_array)
+            plt.show()
+            plt.close()
+
+            
         # if done: print(self.step_counter)
         self.first_step=False
 
