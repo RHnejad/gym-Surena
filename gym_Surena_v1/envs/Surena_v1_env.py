@@ -1,6 +1,7 @@
 
 file_name="SURENA/sfixedWLessLim.urdf"
 # file_name="SURENA/newFootSfixedlim.urdf"
+file_name="SURENA/sfixedlim.urdf"
 
 import pybullet as p
 import pybullet_data
@@ -289,7 +290,7 @@ class SurenaRobot_v1(gym.Env):
 
         sum_orn=sum(np.abs(self.startOrientation-np.array(SOrn)))
 
-        param=np.array([max(0,LinearVel[0]**3), #x_dot
+        param=np.array((LinearVel[0]/0.1)*Pos[0], #x_dot
         self.cal_power(), 
         max(0, np.exp(np.abs(SPos[1]-0.115))-1 ), #exp(delta_y-acceptable_delta_y)
         max(0,np.exp(np.abs(SPos[2]-Z0)-0.03)-1), 
@@ -299,11 +300,11 @@ class SurenaRobot_v1(gym.Env):
         sum_orn,
         imitation_reward])
 
-        weights=np.array([ +1.09 , -0.00000 ,-0.0 ,-0.0, 0. , 2.5 ,0.0 , -0.9,0.])  
+        weights=np.array([ +2.29 , -0.00000 ,-0.0 ,-0.0, 0. , 0.4 ,0.0 , -1.4,0.])  
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=(sum(reward_array))+1.1#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=(sum(reward_array))+2.6#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
         reward_s=reward_s/2
 
         if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
