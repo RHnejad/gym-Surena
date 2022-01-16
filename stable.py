@@ -1,4 +1,6 @@
 # import gym
+import torch
+
 from stable_baselines3 import PPO,TD3
 
 from Surena_env import *
@@ -15,26 +17,33 @@ from stable_baselines3.common.callbacks import CheckpointCallback,BaseCallback
 #for other info about plotting (and logginf images) visit: https://stable-baselines3.readthedocs.io/en/master/guide/tensorboard.html#logging-figures-plots
 
 #ایده: وزن کف وا رو زیاد کن
-
+#jan9thTORQonlyX_600000_steps.zip
 def main():
     TRAIN=True
-    PREV=0
-    N=3
-    name="strongfeetfa"
-    num_cpu = 4
+    PREV=1
+    N=20
+    name="jan16withIMITdeltaTheta"
+    num_cpu =1
+    CtlCSave=0
+    policy_kwargs = dict(activation_fn=torch.nn.ReLU,
+                     net_arch=[dict(pi=[64,64,32], vf=[64,64,32])])
 
-    checkpoint_callback = CheckpointCallback(save_freq=100000, save_path='./savedmodels/',name_prefix=name)
+    checkpoint_callback = CheckpointCallback(save_freq=200000, save_path='./savedmodels/',name_prefix=name)
     start_time = time.time()
-    env=make_vec_env("guei", n_envs=num_cpu)#SurenaRobot("guui") #gym.make("Pendulum-v0")
-    # env = SubprocVecEnv([make_env("gudi", i) for i in range(num_cpu)])
+    env=make_vec_env("gui", n_envs=num_cpu,vec_env_cls=SubprocVecEnv)#SurenaRobot("guui") #gym.make("Pendulum-v0")
+    # env = SubprocVecEnv([make_env("gui", i) for i in range(num_cpu)])
     # env = SurenaRobot("gui")
 
     if TRAIN:
         if PREV: model=PPO.load("./savedmodels/"+name+"last",env=env, custom_objects=custom_objects,tensorboard_log="./tensorboard_logs/")   #     
-        else: model = PPO("MlpPolicy", env, verbose=1,n_steps=512,batch_size=16, learning_rate = 2e-4,tensorboard_log="./tensorboard_logs/")
-       
-        model.learn(total_timesteps=N*100000, tb_log_name=name, log_interval=1,  callback=checkpoint_callback) #reset_num_timesteps=True if (i==PREV and i!=0) else False,
-        model.save("./savedmodels/"+name+"last")
+        else: model = PPO("MlpPolicy", env, verbose=1,n_steps=512,batch_size=32, n_epochs=15, learning_rate = 1.5e-4,tensorboard_log="./tensorboard_logs/",policy_kwargs=policy_kwargs)
+
+        try:
+            model.learn(total_timesteps=N*100000, tb_log_name=name, log_interval=1,  callback=checkpoint_callback)#, reset_num_timesteps=True if (i==PREV and i!=0) else False)
+            model.save("./savedmodels/"+name+"last")
+        except KeyboardInterrupt:
+            if CtlCSave: model.save("./savedmodels/"+name+"keyInterupts"+str(int(time.time()/1e6))) 
+
 
 
     else:
@@ -100,15 +109,43 @@ if __name__ == '__main__':
 
 
 
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for plotting additional values in tensorboard.
+    """
+    def __init__(self, verbose=0):
+        self.is_tb_set = False
+        super(TensorboardCallback, self).__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # Log additional tensor
+        if not self.is_tb_set:
+            with self.model.graph.as_default():
+                tf.summary.scalar('value_target', tf.reduce_mean(self.model.value_target))
+                self.model.summary = tf.summary.merge_all()
+            self.is_tb_set = True
+        # Log scalar value (here a random variable)
+        value = np.random.random()
+        summary = tf.Summary(value=[tf.Summary.Value(tag='random_value', simple_value=value)])
+        self.locals['writer'].add_summary(summary, self.num_timesteps)
+        return True
+
+
+
+
+
+
 
 
 #______________________________________________________________________-
 def foremer_main():
+    num_cpu=1
     start_time = time.time()
     # env=make_vec_env("guei", n_envs=1)#SurenaRobot("guui") #gym.make("Pendulum-v0")
     env = SubprocVecEnv([make_env("gsui", i) for i in range(num_cpu)])
     # env = SurenaRobot("gui")
-
+    TRAIN,PREV=1,0
+    name="old"
     if TRAIN:
         # env =make_vec_env("gui", n_envs=1)#,vec_env_cls=DummyVecEnv)#vec_env_cls: Optional[Type[Union[DummyVecEnv, SubprocVecEnv]]] = None
         if PREV: model=PPO.load("./savedmodels/"+name+str(PREV-1),env=env,custom_objects=custom_objects, tensorboard_log="./tensorboard_logs/")
@@ -161,7 +198,7 @@ def main_TD3():
         if PREV: model=TD3.load("./savedmodels/"+name+"last",env=env, tensorboard_log="./tensorboard_logs/")   #custom_objects=custom_objects,     
         else: model = TD3("MlpPolicy", env, verbose=1,tensorboard_log="./tensorboard_logs/") #n_steps=512,batch_size=16, learning_rate = 3e-4,
        
-        model.learn(total_timesteps=N*100000, tb_log_name=name, callback=checkpoint_callback) #reset_num_timesteps=True if (i==PREV and i!=0) else False,
+        model.learn(total_timesteps=N*100000, tb_log_name=name, callback=checkpoint_callback , reset_num_timesteps=True if (i==PREV and i!=0) else False)
         model.save("./savedmodels/"+name+"last")
 
     else:
@@ -178,6 +215,11 @@ def main_TD3():
 
 
 def main_TD3():
+    TRAIN=1
+    PREV=0
+    name="dntd3"
+    env=SurenaRobot("guis")
+
 
     if TRAIN:
         if 11: model=TD3.load(name+str(PREV-1),env=env,tensorboard_log="./tensorboard_logs/",custom_objects=custom_objects)
@@ -202,10 +244,4 @@ def main_TD3():
 
     env.close()
 
-    print("--- %s mins ---" % ((time.time() - start_time)/60))
-    print("___done___")
 
-
-
-
-    print("--- %s mins ---" % ((time.time() - start_time)/60))
