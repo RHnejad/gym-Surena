@@ -4,7 +4,13 @@ import pybullet as p
 import numpy as np
 import time
 import pybullet_data
+import matplotlib.pyplot as plt
 
+
+# file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
+# file_name="SURENA/colorsfixedlimWLes.urdf"
+# file_name="SURENA/newFootSfixedlim.urdf"
+file_name="SURENA/sfixedlim.urdf"
 FEEDBACK,FEEDBACK2=[],[]
 
 WITH_GUI = 0
@@ -12,8 +18,8 @@ WITH_GUI = 0
 TENDOF=1
 MINDOF=0
 
-DELTA_THETA =0
-TORQUE_CONTROL=1
+DELTA_THETA =1
+TORQUE_CONTROL=0
 
 ACTIVATION= 1#action
 #نکته: بدون اکتیویشن در حالت تورک کنترل نیازه که یه ضریبی رو اضافه کنی که تو اکشن است\ ضرب کنه چون خیلی حروجی های کمی میده
@@ -29,23 +35,17 @@ if not WITH_GUI:
 if MINDOF:
     TENDOF=0
 
-PLOT_REWS=1
-N_plot=10
-
-# file_name="SURENA/sfixedlim.urdf" if not MINDOF else "SURENA/nofootsfixedlim.urdf"
-# file_name="SURENA/colorsfixedlimWLes.urdf"
-# file_name="SURENA/newFootSfixedlim.urdf"
-file_name="SURENA/sfixedlim.urdf"
+PLOT_REWS=0
+N_plot=3
   
 # X0=-0.0517
 Z0=0.9727
 foot_z0=0.037999 
 foot_y0_r=0.11380
-T=200.
+T=50.
 beta=1.5
 gain=1.
 num_steps=512
-
 
 if KNEE:
     from kasra.Robot import *
@@ -501,7 +501,7 @@ class SurenaRobot(gym.Env):
 
 
         #[0.x,1.x_dot,2.stepCount,  3.done,4.power,5.dy,6.dz 7.SigmathethatDot^2 8.SigmaabsdeltaOrn]
-        param=np.array([x, 
+        param=np.array([x*(self.observation[2*self.num_actions+2]/0.1), 
             powers, 
             max(0,  np.exp( np.abs(self.observation[2*self.num_actions])-0.130)  -1.), 
             max(0,  np.exp( np.abs(self.observation[2*self.num_actions+1]-Z0)-0.03)  -1.), 
@@ -515,15 +515,15 @@ class SurenaRobot(gym.Env):
             imitation_reward])
 
         # weights=np.array([ 2.3 , 0.0 ,-0.3 ,0.0, 0 ,0, -1.7, +0.0, 0.0,  0.0, 0.08, 0.7],dtype=np.float32)
-        weights=np.array([ 2.5, 0.0 ,0 ,0.0, 0 ,0, -0.05, +0.0, 0.0,  0.0, 0.7, 0.9],dtype=np.float32)
+        weights=np.array([ 2.5, 0.0 ,0 ,0.0, 0 ,0, -2.1, +0.0, 0.0,  0.0, 0.1, 0.8],dtype=np.float32)
 
         #heree
         reward_array=param*weights
         reward_s=sum(reward_array)+0.65 #-0.75* self.up#-0.095 #-0.007*float(bool(self.up))
-        reward_s=reward_s/4   
-        # print(reward_array)
+        reward_s=reward_s/2
+        #print(reward_array)
 
-        if PLOT_REWS : self.mean_reward_array[self.episode_num%N_plot]+=param
+        if PLOT_REWS : self.mean_reward_array[self.episode_num%N_plot]+=reward_array
 
         return reward_s
 
@@ -578,7 +578,7 @@ class SurenaRobot(gym.Env):
 
         reward=self.cal_reward(powers,x)
 
-        print(self.mean_reward_array)
+        # print(self.mean_reward_array)
         
         if not done: self.step_counter+=1   
         elif PLOT_REWS : 
@@ -587,6 +587,7 @@ class SurenaRobot(gym.Env):
         if done and  self.episode_num%N_plot==0 and self.episode_num>0 and PLOT_REWS :
             fig=plt.figure()
             plt.plot(self.mean_reward_array)
+            plt.legend(list(range(12)))
             plt.show()
             plt.close()
 
@@ -689,7 +690,7 @@ if __name__=="__main__":
     for i in range(216000): #25920
         time.sleep(1/T)
     #     #S.step(Torqs[i])
-        S.step([0]*12)
+        S.step([0]*10)
     #     S.step(ac2[i])
 
     # fb=np.reshape(np.array(FEEDBACK),(-1,2))
