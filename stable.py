@@ -16,7 +16,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback,BaseCallback
 #bash command for tensorboard: "tensorboard --logdir ./tensorboard_logs/ "
 #for other info about plotting (and logginf images) visit: https://stable-baselines3.readthedocs.io/en/master/guide/tensorboard.html#logging-figures-plots
 
-#ایده: وزن کف وا رو زیاد کن
+#
 #jan9thTORQonlyX_600000_steps.zip
 def main():
     TRAIN=True
