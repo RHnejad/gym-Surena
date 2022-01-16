@@ -290,7 +290,7 @@ class SurenaRobot_v1(gym.Env):
 
         sum_orn=sum(np.abs(self.startOrientation-np.array(SOrn)))
 
-        param=np.array([(LinearVel[0]/0.1)*Pos[0], #x_dot
+        param=np.array([(LinearVel[0]/0.1)*SPos[0], #x_dot
         self.cal_power(), 
         max(0, np.exp(np.abs(SPos[1]-0.115))-1 ), #exp(delta_y-acceptable_delta_y)
         max(0,np.exp(np.abs(SPos[2]-Z0)-0.03)-1), 
