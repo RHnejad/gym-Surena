@@ -10,7 +10,7 @@ from gym import spaces
 import numpy as np
 import time
 from matplotlib.pyplot import flag
-from Robot import *
+from SURENA.Robot import *
 
 num_steps=1800
 FILTER=0
@@ -40,7 +40,7 @@ beta=20*200./T
 PLOT_REWS=1
 N_plot=10000
 
-if KNEE: from DCM import *
+if KNEE: from SURENA.DCM import *
 # global x
 # x=0
 PLOT_COM=0
