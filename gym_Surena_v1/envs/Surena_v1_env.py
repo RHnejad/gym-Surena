@@ -1,7 +1,6 @@
 
 file_name="SURENA/sfixedWLessLim.urdf"
 # file_name="SURENA/newFootSfixedlim.urdf"
-file_name="SURENA/sfixedlim.urdf"
 
 import pybullet as p
 import pybullet_data
@@ -10,7 +9,7 @@ from gym import spaces
 import numpy as np
 import time
 from matplotlib.pyplot import flag
-from SURENA.Robot import *
+from Robot import *
 
 num_steps=1800
 FILTER=0
@@ -27,20 +26,21 @@ com_sensor_bias=np.array([+0.0517,0.0,-0.94428+0.7]) #-0.9727
 right_ankle_sensor_bias=np.array([+0.029,+0.1167-0.115,-0.167])
 left_ankle_sensor_bias=np.array([+0.029,-0.1167+0.115,-0.167])
 
+
 deltaS=0.5    
 X0=-0.0517
 Z0=0.9727
 Z0_2=0.7
 foot_z0=0.037999 
 foor_y0_r=0.11380
-T=100.
+T=50.
 gama=5
-beta=20*200./T
+beta=2*200./T
 
-PLOT_REWS=1
+PLOT_REWS=0
 N_plot=10000
 
-if KNEE: from SURENA.DCM import *
+if KNEE: from DCM import *
 # global x
 # x=0
 PLOT_COM=0
@@ -72,7 +72,7 @@ class SurenaRobot_v1(gym.Env):
             self.action_max=np.array([0.0015, 0.0014]) 
         else:
             self.action_min=np.array([0, -0.0018, 0, -0.0007]) if MIN else np.array([0, -0.0018, 0, -0.004, -0.001 ])
-            self.action_max=np.array([0.0015, 0.0014, 0.004, 0.0007]) if MIN else np.array([0.0015, 0.0014, 0.004,  0.004,0.001])
+            self.action_max=np.array([0.0015, 0.0014, 0.004, 0.0007]) if MIN else np.array([0.0015, 0.0014, 0.004,  0.004, 0.001])
         self.action_min=np.multiply(self.action_min,beta)
         self.action_max=np.multiply(self.action_max,beta)
 
@@ -124,6 +124,7 @@ class SurenaRobot_v1(gym.Env):
         self.zmp=[0,0,0]
 
         self.step_counter=0
+        self.stick=0
 
         if IMITATE:
             import json
@@ -134,6 +135,8 @@ class SurenaRobot_v1(gym.Env):
                     self.des_right=np.reshape(np.array(pr['right']),(-1,3))
                     self.des_left=np.reshape(np.array(pr['left']),(-1,3))
                     self.des_theta=np.reshape(np.array(pr['theta']),(-1,12))
+
+        
 
 #____________________________________________________________________________________________
     def cal_power(self):
@@ -154,11 +157,13 @@ class SurenaRobot_v1(gym.Env):
     def bend_knee(self):
         for i in range(240):
                 All = self.surena.doIK([0.0,0.0,0.74 - (i/240)* (0.74-self.planner.deltaZ_)], np.eye(3),[0.0,0.115,0.0], np.eye(3),[0.0, -0.115,0.0], np.eye(3))         
+                print("knee:",[0.0,0.0,0.74 - (i/240)* (0.74-self.planner.deltaZ_)])
                 for index in range (6):
                     p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
                                         jointIndices=self.jointIDs,
                                         controlMode=p.POSITION_CONTROL,
                                         targetPositions = All) 
+                    
                 p.stepSimulation()
         if ACTIVATE_SLEEP:
             time.sleep(1)
@@ -183,18 +188,37 @@ class SurenaRobot_v1(gym.Env):
 
         # print(self.FzL,self.FzR)
 
-        if self.FzR-tempR<0 and self.feet_state==False:#right on the g
-            self.foot_step_count+=1
-            # print("R",self.foot_step_count)
-        elif self.FzL-tempL<0 and self.feet_state==True: #left on the g 
-            self.foot_step_count+=1
-            # print("L",self.foot_step_count)
-        else:
-            self.foot_step_count=0
+        # if self.FzR-tempR<0 and self.feet_state==False:#right on the g
+        #     self.foot_step_count+=1
+        #     # print("R",self.foot_step_count)
+        # elif self.FzL-tempL<0 and self.feet_state==True: #left on the g 
+        #     self.foot_step_count+=1
+        #     # print("L",self.foot_step_count)
+        # else:
+        #     self.foot_step_count=0
 
-        if self.foot_step_count>1:
-            self.feet_state=(not self.feet_state) #switch
-        
+        # if self.foot_step_count>10:
+        #     self.feet_state=(not self.feet_state) #switch
+
+        #print("self.feet_state",self.feet_state)
+
+        if self.stick==0:
+            if ( self.left_ankle[2]< 0.168 or tempL>0 ) and self.FzL==0  and self.feet_state==False:#right on the g #tempL>0
+                self.foot_step_count+=1
+                #print("R",self.foot_step_count)
+            elif (self.right_ankle[2]< 0.168 or tempR>0 )and self.FzR==0  and self.feet_state==True: #left on the g #tempR>0
+                self.foot_step_count+=1
+                #print("L",self.foot_step_count)
+            else:
+                self.foot_step_count=0
+
+            if self.foot_step_count>0:
+                self.stick=1
+                for _ in range(20):
+                    self.step([0]*self.num_actions)
+                    self.feet_state=(not self.feet_state)
+                self.stick=0
+
         self.FzR,self.FzL=tempR,tempL
         self.zmp=self.cal_ZMP()
         ZMP_in_SP=self.process_ZMP(contacts)
@@ -212,13 +236,13 @@ class SurenaRobot_v1(gym.Env):
         if MIN:
             if self.feet_state and (not ONLY_COM): #left foot on the ground
                 self.right=np.array([action[2]+self.right_ankle[0],self.right_ankle[1],action[3]+self.right_ankle[2]]) 
-                self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.0]) 
+                self.left=np.array([self.left_ankle[0],self.left_ankle[1],Z0_2]) 
                 #if not MIN:  self.right=np.array([action[2]+self.right_ankle[0],action[3]+self.right_ankle[1],action[4]+self.right_ankle[2]]) 
             elif ONLY_COM:
                 pass   
             else: 
                 self.left=np.array([action[2]+self.left_ankle[0],self.left_ankle[1],action[3]+self.left_ankle[2]])  
-                self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.0])
+                self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.167])
                 #if not MIN:  self.left=np.array([action[2]+self.left_ankle[0],action[3]+self.left_ankle[1],action[4]+self.left_ankle[2]])
 
         elif 0: ##this case is for 6 actions in which both feet's x and z are considered as actions 
@@ -228,10 +252,14 @@ class SurenaRobot_v1(gym.Env):
         else:    # this case is for when having 5 actions -> com: x y , awing ankle : x y z  
             if self.feet_state and (not ONLY_COM): #left foot on the ground
                 self.right=np.array([action[2]+self.right_ankle[0],action[4]+self.right_ankle[1],action[3]+self.right_ankle[2]]) 
-                self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.0])   
+                self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.167])   
             else: 
                 self.left=np.array([action[2]+self.left_ankle[0],action[4]+self.left_ankle[1],action[3]+self.left_ankle[2]])  
-                self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.0])
+                self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.167])
+
+        if self.stick:
+            self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.167]) 
+            self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.167])
 
         self.right+=right_ankle_sensor_bias
         self.left+=left_ankle_sensor_bias
@@ -290,7 +318,7 @@ class SurenaRobot_v1(gym.Env):
 
         sum_orn=sum(np.abs(self.startOrientation-np.array(SOrn)))
 
-        param=np.array([(LinearVel[0]/0.1)*SPos[0], #x_dot
+        param=np.array([max(0,LinearVel[0]**3), #x_dot
         self.cal_power(), 
         max(0, np.exp(np.abs(SPos[1]-0.115))-1 ), #exp(delta_y-acceptable_delta_y)
         max(0,np.exp(np.abs(SPos[2]-Z0)-0.03)-1), 
@@ -300,25 +328,42 @@ class SurenaRobot_v1(gym.Env):
         sum_orn,
         imitation_reward])
 
-        weights=np.array([ +2.29 , -0.00000 ,-0.0 ,-0.0, 0. , 0.4 ,0.0 , -1.4,0.])  
+        weights=np.array([ +0 , -0.00000 ,-0.0 ,-0.0, 0. , 2.5 ,0.0 , -0.9,0.])  
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=(sum(reward_array))+2.6#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
-        reward_s=reward_s/2
+        reward_s=(sum(reward_array))+1.6#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=reward_s
 
         if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
         
         return reward_s
+
+
+    def double_support(self,com_trj,right_a,left_a):
+        All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
+        if FILTER:
+            temp=All-self.observations[15:27]
+            for i in range(12):
+                if temp[i]>self.thetaDot_high[i]:
+                    All[i]=self.thetaDot_high[i]+self.observations[15+i]
+                elif temp[i]<self.thetaDot_low[i]:
+                    All[i]=self.thetaDot_low[i]+self.observations[15+i]
+
+        p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
+                                jointIndices=self.jointIDs,
+                                controlMode=p.POSITION_CONTROL,
+                                targetPositions = All)
+        p.stepSimulation()
+        if ACTIVATE_SLEEP: time.sleep(1/T)
+
+
     #________________________________________
     def step(self, action):
-
         com_trj=self.cal_trajectories(action)
-        # print(com_trj,self.left,self.right)
         All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
 
         #filter 
-        # print("B",All)
         if FILTER:
             temp=All-self.observations[15:27]
             for i in range(12):
@@ -376,6 +421,7 @@ class SurenaRobot_v1(gym.Env):
     def reset(self):
         self.feet_state=False
         self.foot_step_count=0
+        self.stick=0
 
         self.first_step=True
         self.step_counter=0
@@ -582,10 +628,15 @@ class SurenaRobot_v1(gym.Env):
 if __name__=="__main__":
     S=SurenaRobot_v1("gui")
 
-    for i in range(500):
-        S.step([0]*4)
-    # print(S.com)0
-    # print("*************",p.getLinkStates(S.SurenaID,S.jointIDs))
+    
+    print(right_ankle_sensor_bias)
+    print(left_ankle_sensor_bias)
+
+
+    for i in range(50000):
+        S.step([0]*5)
+    #print(S.com)0
+    #print("*************",p.getLinkStates(S.SurenaID,S.jointIDs))
     
     # for i in range(10000):
     #     a,b,done,c=S.step([.1,.1,.1,.1])
@@ -635,3 +686,8 @@ if __name__=="__main__":
     #         S.step(ac)
 
     print("__end__")
+
+
+
+
+
