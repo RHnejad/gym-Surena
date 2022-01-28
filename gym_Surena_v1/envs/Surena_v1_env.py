@@ -31,11 +31,12 @@ deltaS=0.5
 X0=-0.0517
 Z0=0.9727
 Z0_2=0.7
+Z0_ankle=0.167
 foot_z0=0.037999 
 foor_y0_r=0.11380
-T=50.
+T=200
 double_support_time_steps=int(0.3*T)
-gama=4
+gama=10
 beta=20*200./T
 
 PLOT_REWS=0
@@ -146,6 +147,7 @@ class SurenaRobot_v1(gym.Env):
                     self.des_right=np.reshape(np.array(pr['right']),(-1,3))
                     self.des_left=np.reshape(np.array(pr['left']),(-1,3))
                     self.des_theta=np.reshape(np.array(pr['theta']),(-1,12))
+                    self.last_imit_indx,_=self.des_com.shape
 
         
 
@@ -247,14 +249,14 @@ class SurenaRobot_v1(gym.Env):
         if MIN:
             if self.feet_state and (not ONLY_COM): #left foot on the ground
                 self.right=np.array([action[2]+self.right_ankle[0], r_y, action[3]+self.right_ankle[2]]) 
-                self.left=np.array([self.left_ankle[0], l_y, 0.167])  #Z0_2
+                self.left=np.array([self.left_ankle[0], l_y, Z0_ankle])  #Z0_2
                 
                 #if not MIN:  self.right=np.array([action[2]+self.right_ankle[0],action[3]+self.right_ankle[1],action[4]+self.right_ankle[2]]) 
             elif ONLY_COM:
                 pass   
             else: 
                 self.left=np.array([action[2]+self.left_ankle[0],l_y,action[3]+self.left_ankle[2]])  
-                self.right=np.array([self.right_ankle[0],r_y,0.167])
+                self.right=np.array([self.right_ankle[0],r_y,Z0_ankle])
                 #if not MIN:  self.left=np.array([action[2]+self.left_ankle[0],action[3]+self.left_ankle[1],action[4]+self.left_ankle[2]])
 
         elif 0: ##this case is for 6 actions in which both feet's x and z are considered as actions 
@@ -264,14 +266,14 @@ class SurenaRobot_v1(gym.Env):
         else:    # this case is for when having 5 actions -> com: x y , awing ankle : x y z  
             if self.feet_state and (not ONLY_COM): #left foot on the ground
                 self.right=np.array([action[2]+self.right_ankle[0],action[4]+self.right_ankle[1],action[3]+self.right_ankle[2]]) 
-                self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.167])   
+                self.left=np.array([self.left_ankle[0],self.left_ankle[1],Z0_ankle])   
             else: 
                 self.left=np.array([action[2]+self.left_ankle[0],action[4]+self.left_ankle[1],action[3]+self.left_ankle[2]])  
-                self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.167])
+                self.right=np.array([self.right_ankle[0],self.right_ankle[1],Z0_ankle])
 
         if self.stick>0:
-            self.left=np.array([self.left_ankle[0],self.left_ankle[1],0.167]) 
-            self.right=np.array([self.right_ankle[0],self.right_ankle[1],0.167])
+            self.left=np.array([self.left_ankle[0],self.left_ankle[1],Z0_ankle]) 
+            self.right=np.array([self.right_ankle[0],self.right_ankle[1],Z0_ankle])
             self.stick+=1
 
         if self.stick>=double_support_time_steps :self.stick=0 
@@ -331,9 +333,9 @@ class SurenaRobot_v1(gym.Env):
 
         imitation_reward=0
         if IMITATE:
-            imitation_reward=np.power((com_trj[1]-self.des_com[self.step_counter%1800][1]),2)
-            imitation_reward+=np.power((self.right[2]-self.des_right[self.step_counter%1800][2]),2)
-            imitation_reward+=np.power((self.left[2]-self.des_left[self.step_counter%1800][2]),2)
+            imitation_reward=np.power((com_trj[1]-self.des_com[self.step_counter%self.last_imit_indx][1]),2)
+            imitation_reward+=np.power((self.right[2]-self.des_right[self.step_counter%self.last_imit_indx][2]),2)
+            imitation_reward+=np.power((self.left[2]-self.des_left[self.step_counter%self.last_imit_indx][2]),2)
             # imitation_reward=np.sum(imitation_reward)
             imitation_reward=np.exp(-2*(imitation_reward))
             # print(imitation_reward)
@@ -350,11 +352,11 @@ class SurenaRobot_v1(gym.Env):
         sum_orn,
         imitation_reward])
 
-        weights=np.array([ +0. , -0.00000 ,-0.0 ,-0.0, 0. , 3.5 ,0.0 , -0.0, 1.5])  
+        weights=np.array([ +0. , -0.00000 ,-0.0 ,-0.0, 0. , 0 ,0.0 , -0.0, 1.5])  
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=(sum(reward_array))+2.6#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=(sum(reward_array))+0.06#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
         reward_s=reward_s
 
         if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
@@ -372,9 +374,6 @@ class SurenaRobot_v1(gym.Env):
                 elif temp[i]<self.thetaDot_low[i]:
                     All[i]=self.thetaDot_low[i]+self.observations[15+i]
         
-
-        
-
         p.setJointMotorControlArray(bodyUniqueId=self.SurenaID,
                                 jointIndices=self.jointIDs,
                                 controlMode=p.POSITION_CONTROL,
@@ -385,10 +384,15 @@ class SurenaRobot_v1(gym.Env):
 
     #________________________________________
     def step(self, action):
-        com_trj=self.cal_trajectories(action)
+        #com_trj=self.cal_trajectories(action)
         #print(com_trj,self.right ,self.left)
-        All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
 
+        com_trj=self.des_com[int(self.step_counter*200/T)%self.last_imit_indx]
+        self.right=self.des_right[int(self.step_counter*200/T)%self.last_imit_indx]
+        self.left=self.des_left[int(self.step_counter*200/T)%self.last_imit_indx]
+
+        All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
+    
         #pos filter
         for i in range(12):
             if All[i]<self.joint_space["low"][i]:
@@ -396,7 +400,7 @@ class SurenaRobot_v1(gym.Env):
             elif All[i]>self.joint_space["high"][i]:
                 All[i]=self.joint_space["high"][i]
 
-        #vel filter 
+        # #vel filter 
         if FILTER:
             temp=All-self.joints_pos
             for i in range(12):
@@ -441,7 +445,6 @@ class SurenaRobot_v1(gym.Env):
                 com_for_plot=[[],[]]
 
         self.first_step=False
-        self.step_counter+=1
 
         return self.observations, reward, done, {}
     #________________________________________
@@ -648,3 +651,68 @@ class SurenaRobot_v1(gym.Env):
         return max(0,delta_s-0.04)
 
 #_____________________
+
+
+if __name__=="__main__":
+    S=SurenaRobot_v1("gui")
+
+    
+    print(S.last_imit_indx)
+    for i in range(50000):
+        S.step([0]*4)
+    #print(S.com)0
+    #print("*************",p.getLinkStates(S.SurenaID,S.jointIDs))
+    
+    # for i in range(10000):
+    #     a,b,done,c=S.step([.1,.1,.1,.1])
+    #     if done:
+    #         S.reset()
+
+
+    # import json
+
+    # with open('data.txt') as json_file:
+    #     data = json.load(json_file)
+    #     for pr in data['people']:
+    #         com_der=np.reshape(np.array(pr['COM']),(-1,3))
+    #         der1=np.reshape(np.array(pr['R']),(-1,3))
+    #         der2=np.reshape(np.array(pr['L']),(-1,3))
+
+    # plt.figure()
+    # plt.plot(com_der)
+    # plt.legend(["x","y","z"])
+    # plt.title("der_com")
+
+    # plt.figure()
+    # plt.plot(der1)
+    # plt.legend(["x","y","z"])
+    # plt.title("right der")
+
+    # plt.figure()
+    # plt.plot(der2)
+    # plt.legend(["x","y","z"])
+    # plt.title("left der")
+
+    # plt.show()
+    # print(der1)
+    # print(der2)
+
+    # for ii in range(21): #2160
+        
+    #     feet_state=np.abs(S.right_ankle[1]-S.com[1]) > np.abs(S.left_ankle[1]-S.com[1]) #0:right 1:left on the floor
+    #     # feet_state=(der2[ii][0]==0)
+    #     # if ii<20:print(S.right_ankle[1],S.com[1],S.left_ankle[1],S.com[1],feet_state)
+    #     if feet_state:
+    #         ac=np.array([com_der[ii][0],com_der[ii][1],der1[ii][0],der1[ii][2]])
+    #     else:
+    #         ac=np.array([com_der[ii][0],com_der[ii][1],der2[ii][0],der2[ii][2]])
+    #     if ii<20:print("obs",S.observations[4:])
+    #     for i in range(1000):
+    #         S.step(ac)
+
+    print("__end__")
+
+
+
+
+
