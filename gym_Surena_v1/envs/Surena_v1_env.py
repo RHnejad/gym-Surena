@@ -35,7 +35,7 @@ Z0_ankle=0.167
 foot_z0=0.037999 
 foor_y0_r=0.11380
 T=200
-double_support_time_steps=int(0.3*T)
+double_support_time_steps=int(0.35*T)
 gama=10
 beta=20*200./T
 
@@ -276,7 +276,7 @@ class SurenaRobot_v1(gym.Env):
             self.right=np.array([self.right_ankle[0],self.right_ankle[1],Z0_ankle])
             self.stick+=1
 
-        if self.stick>=double_support_time_steps :self.stick=0 
+        if self.stick>= double_support_time_steps :self.stick=0 
 
         self.right+=right_ankle_sensor_bias
         self.left+=left_ankle_sensor_bias
@@ -326,19 +326,22 @@ class SurenaRobot_v1(gym.Env):
     def cal_rewards(self,com_trj, SPos,SOrn, LinearVel):
 
         imitation_reward_theta=0
-        # if IMITATE:
-        #     imitation_reward_theta=np.power((self.observation[0:self.num_actions]-self.des_theta[self.step_counter%1800]),2)
-        #     imitation_reward_theta=np.sum(imitation_reward_theta)
-        #     imitation_reward_theta=np.exp(-1*imitation_reward_theta) #chenge -1 another negative num. if necessary
+        if IMITATE:
+            imitation_reward_theta=np.power((self.joints_pos-self.des_theta[int(self.step_counter*200/T)%self.last_imit_indx]),2)
+            imitation_reward_theta=np.sum(imitation_reward_theta)
+            imitation_reward_theta=np.exp(-1*imitation_reward_theta) #change -1 another negative num. if necessary
 
         imitation_reward=0
         if IMITATE:
-            imitation_reward=np.power((com_trj[1]-self.des_com[self.step_counter%self.last_imit_indx][1]),2)
-            imitation_reward+=np.power((self.right[2]-self.des_right[self.step_counter%self.last_imit_indx][2]),2)
-            imitation_reward+=np.power((self.left[2]-self.des_left[self.step_counter%self.last_imit_indx][2]),2)
-            # imitation_reward=np.sum(imitation_reward)
+            imitation_reward=np.power((com_trj[1]-self.des_com[int(self.step_counter*200/T)%self.last_imit_indx][1]),2)
+            imitation_reward+=np.power((self.right[2]-self.des_right[int(self.step_counter*200/T)%self.last_imit_indx][2]),2)
+            imitation_reward+=np.power((self.left[2]-self.des_left[int(self.step_counter*200/T)%self.last_imit_indx][2]),2)
+
+            imitation_reward+=(0.5*np.power((com_trj[0]-self.des_com[int(self.step_counter*200/T)%self.last_imit_indx][0]),2))
+            imitation_reward+=(0.5*np.power((self.right[0]-self.des_right[int(self.step_counter*200/T)%self.last_imit_indx][0]),2))
+            imitation_reward+=(0.5*np.power((self.left[0]-self.des_left[int(self.step_counter*200/T)%self.last_imit_indx][0]),2))
             imitation_reward=np.exp(-2*(imitation_reward))
-            # print(imitation_reward)
+
 
         sum_orn=sum(np.abs(self.startOrientation-np.array(SOrn)))
 
@@ -350,13 +353,14 @@ class SurenaRobot_v1(gym.Env):
         SPos[0], #x
         self.left_ankle[0],
         sum_orn,
-        imitation_reward])
+        imitation_reward,
+        imitation_reward_theta])
 
-        weights=np.array([ +0. , -0.00000 ,-0.0 ,-0.0, 0. , 0 ,0.0 , -0.0, 1.5])  
+        weights=np.array([ +0. , -0.00000 ,-0.0 ,-0.0, 0. , 1. ,0.0 , -0.0, 0, 1.8])  
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=(sum(reward_array))+0.06#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=(sum(reward_array))+1.06#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
         reward_s=reward_s
 
         if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
@@ -384,13 +388,8 @@ class SurenaRobot_v1(gym.Env):
 
     #________________________________________
     def step(self, action):
-        #com_trj=self.cal_trajectories(action)
+        com_trj=self.cal_trajectories(action)
         #print(com_trj,self.right ,self.left)
-
-        com_trj=self.des_com[int(self.step_counter*200/T)%self.last_imit_indx]
-        self.right=self.des_right[int(self.step_counter*200/T)%self.last_imit_indx]
-        self.left=self.des_left[int(self.step_counter*200/T)%self.last_imit_indx]
-
         All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
     
         #pos filter
@@ -711,8 +710,5 @@ if __name__=="__main__":
     #         S.step(ac)
 
     print("__end__")
-
-
-
 
 
