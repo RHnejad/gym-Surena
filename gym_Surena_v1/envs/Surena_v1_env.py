@@ -1,6 +1,6 @@
 
 file_name="SURENA/sfixedWLessLim.urdf"
-# file_name="SURENA/newFootSfixedlim.urdf"
+#file_name="SURENA/newFootSfixedlim.urdf"
 
 import pybullet as p
 import pybullet_data
@@ -37,7 +37,7 @@ foor_y0_r=0.11380
 T=200
 double_support_time_steps=int(0.35*T)
 gama=10
-beta=20*200./T
+beta=10*200./T #20*
 
 PLOT_REWS=0
 N_plot=10000
@@ -46,8 +46,6 @@ if KNEE: from DCM import *
 # global x
 # x=0
 PLOT_COM=0
-global com_for_plot
-com_for_plot=[[],[]]
 
 class SurenaRobot_v1(gym.Env):
     """Custom Environment that follows gym interface"""
@@ -80,8 +78,8 @@ class SurenaRobot_v1(gym.Env):
         else:
             # self.action_min=np.array([0, -0.0018, 0, -0.0007]) if MIN else np.array([0, -0.0018, 0, -0.004, -0.001 ])
             # self.action_max=np.array([0.0015, 0.0014, 0.004, 0.0007]) if MIN else np.array([0.0015, 0.0014, 0.004,  0.004, 0.001])
-            self.action_min=np.array([0, -0.007, 0, -0.007]) if MIN else np.array([0, -0.0018, 0, -0.004, -0.001 ])
-            self.action_max=np.array([0.007, 0.007, 0.007, 0.007]) if MIN else np.array([0.0015, 0.0014, 0.004,  0.004, 0.001])
+            self.action_min=np.array([0, -0.002, 0, -0.007]) if MIN else np.array([0, -0.0018, 0, -0.004, -0.001 ])
+            self.action_max=np.array([0.002, 0.002, 0.004, 0.007]) if MIN else np.array([0.0015, 0.0014, 0.004,  0.004, 0.001])
         
         self.action_min=np.multiply(self.action_min,beta)
         self.action_max=np.multiply(self.action_max,beta)
@@ -91,7 +89,7 @@ class SurenaRobot_v1(gym.Env):
                 low=np.concatenate((self.action_min,[-0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,
                                                     -0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,
                                                     -0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,  -0.1,-0.5,-0.1,
-                                                      0, 0,-1,0])),
+                                                      0, 0,0,0])),
                 high=np.concatenate((self.action_max,[5,0.5,0.9727, 5,0.5,0.9727, 5,0.5,0.9727,
                                                     5,0.5,0.4, 5,0.5,0.4, 5,0.5,0.4,
                                                     5,0.5,0.4, 5,0.5,0.4, 5,0.5,0.4,
@@ -199,22 +197,6 @@ class SurenaRobot_v1(gym.Env):
             elif contacts[k][3]==11:
                 tempL+=contacts[k][9]
 
-        # print(self.FzL,self.FzR)
-
-        # if self.FzR-tempR<0 and self.feet_state==False:#right on the g
-        #     self.foot_step_count+=1
-        #     # print("R",self.foot_step_count)
-        # elif self.FzL-tempL<0 and self.feet_state==True: #left on the g 
-        #     self.foot_step_count+=1
-        #     # print("L",self.foot_step_count)
-        # else:
-        #     self.foot_step_count=0
-
-        # if self.foot_step_count>10:
-        #     self.feet_state=(not self.feet_state) #switch
-
-        #print("self.feet_state",self.feet_state)
-
         if self.stick==0:
             if (  tempL>28 ) and self.FzL==0  and self.feet_state==False:#right on the g #tempL>0 self.left_ankle[2]< 0.168 or
                 self.foot_step_count+=1
@@ -227,9 +209,6 @@ class SurenaRobot_v1(gym.Env):
 
             if self.foot_step_count>0:
                 self.stick=1
-                # for _ in range(20):
-                #     self.step([0]*self.num_actions)
-                #     self.feet_state=(not self.feet_state)
 
         self.FzR,self.FzL=tempR,tempL
         self.zmp=self.cal_ZMP()
@@ -276,7 +255,7 @@ class SurenaRobot_v1(gym.Env):
             self.right=np.array([self.right_ankle[0],self.right_ankle[1],Z0_ankle])
             self.stick+=1
 
-        if self.stick>= double_support_time_steps :self.stick=0 
+        if self.stick>= double_support_time_steps  and self.cal_observations[-2]==1 :self.stick=0 
 
         self.right+=right_ankle_sensor_bias
         self.left+=left_ankle_sensor_bias
@@ -300,7 +279,7 @@ class SurenaRobot_v1(gym.Env):
         ankle_states=p.getLinkStates(self.SurenaID,[4,10])
 
         self.right_ankle,self.left_ankle=np.array(ankle_states[0][0]),np.array(ankle_states[1][0])
-        self.com=SPos[0:2]
+        self.com=SPos
 
         for i in range(8,0,-1): #(t-1) and (t-2)
             if i%3!=0:
@@ -315,7 +294,7 @@ class SurenaRobot_v1(gym.Env):
         self.observations[self.num_actions+9:self.num_actions+12]=self.right_ankle
         self.observations[self.num_actions+18:self.num_actions+21]=self.left_ankle
 
-        self.observations[-1]=self.feet_forces() #1 if zmp in sp and -1 if not 
+        self.observations[-2]=self.feet_forces() #1 if zmp in sp and 0 if not 
         self.observations[self.num_actions+27:self.num_actions+29]=[self.FzR,self.FzL] #THIS SHOULD ALWAYS BE AFTER self.feet_forces()
 
         self.observations[-1]=self.stick
@@ -356,19 +335,19 @@ class SurenaRobot_v1(gym.Env):
         imitation_reward,
         imitation_reward_theta])
 
-        weights=np.array([ +0. , -0.00000 ,-0.0 ,-0.0, 0. , 1. ,0.0 , -0.0, 0, 1.8])  
+        weights=np.array([ +0.5 , -0.00000 ,-0.0 ,-0.0, 0. , 1.5 ,0.0 , -0.3, 2.8, 0])  
         #heree
         reward_array=param*weights
         # print(reward_array)
-        reward_s=(sum(reward_array))+1.06#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
-        reward_s=reward_s
+        reward_s=(sum(reward_array))+1.06-self.observations[-2]#1.25+self.foot_step_count*0.8#-0.1*float(bool(self.up))-150*float(bool(SPos[2]<0.5))
+        reward_s=reward_s/5
 
         if PLOT_REWS :self.mean_reward_array[self.episode_num%N_plot]+=param
         
         return reward_s
 
 
-    def double_support(self,com_trj,right_a,left_a):
+    def double_support(self,com_trj):
         All = self.surena.doIK(com_trj, np.eye(3),self.left, np.eye(3),self.right, np.eye(3))
         if FILTER:
             temp=All-self.joints_pos
@@ -385,7 +364,6 @@ class SurenaRobot_v1(gym.Env):
         p.stepSimulation()
         if ACTIVATE_SLEEP: time.sleep(1/T)
 
-
     #________________________________________
     def step(self, action):
         com_trj=self.cal_trajectories(action)
@@ -399,7 +377,7 @@ class SurenaRobot_v1(gym.Env):
             elif All[i]>self.joint_space["high"][i]:
                 All[i]=self.joint_space["high"][i]
 
-        # #vel filter 
+        #vel filter 
         if FILTER:
             temp=All-self.joints_pos
             for i in range(12):
@@ -418,7 +396,8 @@ class SurenaRobot_v1(gym.Env):
 
         SPos,SOrn,LinearVel=self.cal_observations(action)
 
-        done=((SPos[2]<0.5))  or self.up>T*2 #or ( self.observations[-1:]>0 and self.left_ankle[0]>=0.2) #SPos[2]<0.5 or SPos[0]>2. or self.up>1 or 
+        done=((SPos[2]<0.67))  or self.up>T*2 #or ( self.observations[-1:]>0 and self.left_ankle[0]>=0.2) #SPos[2]<0.5 or SPos[0]>2. or self.up>1 or 
+        #print(done,"-",self.observations[-2],"-",SPos[2])
         reward=self.cal_rewards(com_trj, SPos,SOrn, LinearVel)
 
         if not done: self.step_counter+=1   
@@ -433,15 +412,36 @@ class SurenaRobot_v1(gym.Env):
             plt.close()
 
         if PLOT_COM:
-            global com_for_plot
-            com_for_plot[0].append(com_trj[0])
-            com_for_plot[1].append(com_trj[1])
+            for i in range(3):
+                self.com_for_plot[0][i].append(com_trj[i])
+                self.ankle_r_f_p[0][i].append(self.right[i])
+                self.ankle_l_f_p[0][i].append(self.left[i])
+                self.com_for_plot[1][i].append(self.com[i]+com_sensor_bias[i])
+                self.ankle_r_f_p[1][i].append(self.right_ankle[i]+right_ankle_sensor_bias[i])
+                self.ankle_l_f_p[1][i].append(self.left_ankle[i]+left_ankle_sensor_bias[i])
 
             if done:
+                temp=["command","feedback"]
+                for i in range(2):
+                    for j in range(2):
+                        plt.figure()
+                        plt.plot(self.com_for_plot[i][0],self.com_for_plot[i][1+j],"*")
+                        plt.plot(self.ankle_r_f_p[i][0],self.ankle_r_f_p[i][1+j],"")
+                        plt.plot(self.ankle_l_f_p[i][0],self.ankle_l_f_p[i][1+j],".")
+                        plt.title(temp[i])
+
                 plt.figure()
-                plt.plot(com_for_plot[0],com_for_plot[1])
+                plt.plot(self.com_for_plot[0][0] ,"*")
+                plt.plot(self.com_for_plot[0][1] ,"*")
+                plt.plot(self.ankle_r_f_p[0][0] ,".")
+                plt.plot(self.ankle_r_f_p[0][2] ,".")
+                plt.plot(self.ankle_l_f_p[0][0] ,".")
+                plt.plot(self.ankle_l_f_p[0][2] ,".")
+                plt.legend(["x_com","y_com","x_right_ankle","z_right_ankle","x_left_ankle","z_left_ankle"])
+                
                 plt.show()
-                com_for_plot=[[],[]]
+
+
 
         self.first_step=False
 
@@ -451,12 +451,13 @@ class SurenaRobot_v1(gym.Env):
         self.feet_state=False
         self.foot_step_count=0
         self.stick=0
+        self.up=0
 
         self.first_step=True
         self.step_counter=0
         p.resetSimulation()
         self.planeId = p.loadURDF("plane.urdf") #ID:0
-        self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation) 
+        self.SurenaID=p.loadURDF(file_name,self.startPos, self.startOrientation)  #useFixedBase=True
         p.enableJointForceTorqueSensor(self.SurenaID,5)
         p.enableJointForceTorqueSensor(self.SurenaID,11)
         p.setGravity(0,0,-9.81)
@@ -467,6 +468,11 @@ class SurenaRobot_v1(gym.Env):
         
         self.last_actions=np.zeros(self.num_actions)
         self.cal_observations(self.last_actions)
+
+        if PLOT_COM:
+            self.com_for_plot=[[[],[],[]],[[],[],[]]]
+            self.ankle_r_f_p=[[[],[],[]],[[],[],[]]]
+            self.ankle_l_f_p=[[[],[],[]],[[],[],[]]]
 
         return self.observations
     #________________________________________
@@ -710,5 +716,4 @@ if __name__=="__main__":
     #         S.step(ac)
 
     print("__end__")
-
 
