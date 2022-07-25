@@ -1,1 +1,1 @@
-Some funny GIFs from RL failures :)  
+Some funny moments from RL failures :)  
